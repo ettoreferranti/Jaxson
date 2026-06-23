@@ -173,10 +173,18 @@ impl Agent {
         embedder: &dyn Embedder,
         now: i64,
     ) -> Result<usize, AgentError> {
+        // Extraction is best-effort: a model that returns malformed/empty JSON simply
+        // means nothing was learned this turn, not a failed turn. (Logging this is F1.12.)
         let window = self.recent_window();
-        let extraction = self.extractor.extract(model, &window)?;
+        let extraction = match self.extractor.extract(model, &window) {
+            Ok(extraction) => extraction,
+            Err(_) => return Ok(0),
+        };
         let (nodes, edges) =
-            extraction.into_graph(now, self.extractor.provenance, MemoryId::new)?;
+            match extraction.into_graph(now, self.extractor.provenance, MemoryId::new) {
+                Ok(graph) => graph,
+                Err(_) => return Ok(0),
+            };
         let learned = nodes.len();
         for node in nodes {
             let embedding = embedder.embed(&node.content);
@@ -281,16 +289,29 @@ mod tests {
     }
 
     #[test]
-    fn generation_failure_surfaces_as_error() {
-        // No replies queued and an empty reply still generates; force a parse failure
-        // instead by returning non-JSON for the extraction step.
+    fn bad_extraction_json_is_non_fatal() {
+        // The chat reply succeeds; the extraction step returns non-JSON. The turn must
+        // still succeed, just with nothing learned.
         let mut model = ScriptedGenerator::new(["a reply", "not json at all"]);
         let embedder = HashEmbedder::default();
         let mut agent = Agent::new("persona");
-        let err = agent
-            .respond(&mut model, &embedder, 0, "hello")
-            .unwrap_err();
-        assert!(matches!(err, AgentError::Extraction(_)));
+        let turn = agent.respond(&mut model, &embedder, 0, "hello").unwrap();
+        assert_eq!(turn.reply, "a reply");
+        assert_eq!(turn.learned, 0);
+        assert!(agent.graph().is_empty());
+    }
+
+    #[test]
+    fn extraction_with_a_bad_relation_index_is_non_fatal() {
+        // Valid JSON, but the relation points past the memory list — into_graph errors,
+        // and the turn still succeeds with nothing learned (no partial graph).
+        let json = r#"{"memories":[{"kind":"fact","content":"x","confidence":0.9}],"relations":[{"from":0,"to":9,"relation":"knows","weight":0.5}]}"#;
+        let mut model = ScriptedGenerator::new(["a reply", json]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        let turn = agent.respond(&mut model, &embedder, 0, "hello").unwrap();
+        assert_eq!(turn.learned, 0);
+        assert!(agent.graph().is_empty());
     }
 
     #[test]

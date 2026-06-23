@@ -9,6 +9,12 @@ repository = "https://github.com/ettoreferranti/Jaxson"
 # NOTE: intentionally NOT a workspace member (see root Cargo.toml `exclude`). It pulls
 # native windowing deps and is verified by running on macOS, not by CI.
 
+[features]
+default = []
+# Use the real local model (llama.cpp + Metal) instead of the demo brain. Needs cmake +
+# a GGUF model at runtime (set JAXSON_MODEL). Build: `--features llama`.
+llama = ["jaxson-llm/llama"]
+
 [dependencies]
 eframe = "0.29"
 egui = "0.29"

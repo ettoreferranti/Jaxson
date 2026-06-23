@@ -12,10 +12,10 @@ use std::time::Instant;
 use eframe::egui;
 use egui::Color32;
 
-use jaxson_agent::{Agent, HashEmbedder};
+use jaxson_agent::{Agent, AgentConfig, HashEmbedder};
 use jaxson_core::MoodVector;
 use jaxson_face::{face, rasterize, Bitmap};
-use jaxson_llm::{GenerationConfig, LlmError, TextGenerator};
+use jaxson_llm::{ChatTemplate, GenerationConfig, LlmError, TextGenerator};
 
 const PERSONA: &str = "You are Jaxson, a warm, curious companion getting to know its owner.";
 const FACE_PIXELS: usize = 250;
@@ -43,9 +43,45 @@ impl TextGenerator for DemoModel {
     }
 }
 
+/// Pick the chat template from `JAXSON_TEMPLATE` (chatml/llama3/plain), default ChatML.
+fn select_template() -> ChatTemplate {
+    match std::env::var("JAXSON_TEMPLATE").as_deref() {
+        Ok("llama3") => ChatTemplate::Llama3,
+        Ok("plain") => ChatTemplate::Plain,
+        _ => ChatTemplate::ChatMl,
+    }
+}
+
+/// Use the real local model when built with `--features llama` and `JAXSON_MODEL`
+/// points at a GGUF; otherwise fall back to the demo brain.
+fn make_model() -> Box<dyn TextGenerator> {
+    #[cfg(feature = "llama")]
+    {
+        use jaxson_llm::backends::{LlamaConfig, LlamaGenerator};
+        match std::env::var("JAXSON_MODEL") {
+            Ok(path) => {
+                match LlamaGenerator::load(&LlamaConfig {
+                    model_path: path.clone().into(),
+                    ..Default::default()
+                }) {
+                    Ok(model) => {
+                        eprintln!("Loaded model: {path}");
+                        return Box::new(model);
+                    }
+                    Err(e) => eprintln!(
+                        "Failed to load JAXSON_MODEL ({path}): {e}\nFalling back to the demo brain."
+                    ),
+                }
+            }
+            Err(_) => eprintln!("JAXSON_MODEL not set; using the demo brain."),
+        }
+    }
+    Box::new(DemoModel)
+}
+
 struct JaxsonApp {
     agent: Agent,
-    model: DemoModel,
+    model: Box<dyn TextGenerator>,
     embedder: HashEmbedder,
     transcript: Vec<(&'static str, String)>,
     input: String,
@@ -61,8 +97,11 @@ impl JaxsonApp {
             cc.egui_ctx
                 .load_texture("jaxson-face", neutral, egui::TextureOptions::NEAREST);
         JaxsonApp {
-            agent: Agent::new(PERSONA),
-            model: DemoModel,
+            agent: Agent::new(PERSONA).with_config(AgentConfig {
+                template: select_template(),
+                ..Default::default()
+            }),
+            model: make_model(),
             embedder: HashEmbedder::default(),
             transcript: vec![("Jaxson", "Hi! I'm Jaxson. What's your name?".to_string())],
             input: String::new(),
@@ -82,7 +121,7 @@ impl JaxsonApp {
         self.turn += 1;
         match self
             .agent
-            .respond(&mut self.model, &self.embedder, self.turn, &input)
+            .respond(self.model.as_mut(), &self.embedder, self.turn, &input)
         {
             Ok(turn) => self.transcript.push(("Jaxson", turn.reply)),
             Err(e) => self.transcript.push(("Jaxson", format!("(error: {e})"))),

@@ -29,8 +29,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   config, `TextGenerator` trait + deterministic mock, and a `llama.cpp` (Metal)
   backend behind the `llama` feature (loads a GGUF, streaming generation). Pure layer
   fully tested + mutation-graded; native backend compile-verified.
-- [ ] **F1.1b** Benchmark latency on a Mac with a real 7–8B quantized GGUF (NFR-3):
-  first-token < 1.5 s, interactive generation. Needs a downloaded model + `cmake`.
+- [x] **F1.1b** Wire the real model in: app `llama` feature selects `LlamaGenerator`
+  from `JAXSON_MODEL` (else demo brain); headless `llama_chat` smoke-test example; agent
+  extraction made non-fatal (real models emit imperfect JSON). Compile-verified on macOS;
+  run by the owner with a model.
+- [ ] **F1.1c** Benchmark latency on a Mac with a real 7–8B quantized GGUF (NFR-3):
+  first-token < 1.5 s, interactive generation. Tune model/quantization (resolve OQ-2).
 - [x] **F1.2** `jaxson-memory` graph store: typed/weighted nodes + edges, `MemoryStore`
   trait + in-memory store (pure, mutation-graded), and encrypted-at-rest SQLite
   (SQLCipher) persistence behind the `sqlite` feature (round-trip + wrong-key tests).

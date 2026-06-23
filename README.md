@@ -73,9 +73,26 @@ cargo run --example raster_demo -p jaxson-face
 cargo run --manifest-path crates/jaxson-app/Cargo.toml
 ```
 
-The native `llama.cpp` + Metal backend is behind a cargo feature
-(`cargo build -p jaxson-llm --features llama`); it needs `cmake` and a local GGUF
-model. See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+### Use the real local model (macOS, Apple Silicon)
+
+By default the app uses a mock "demo brain" (canned replies; the face still reacts to
+your sentiment). To run Jaxson on a real local LLM:
+
+1. Install `cmake` (`brew install cmake`) — needed to build `llama.cpp`.
+2. Download a 7–8B instruct **GGUF** (e.g. Qwen2.5-7B-Instruct or Llama-3.1-8B-Instruct,
+   `Q4_K_M`). It stays on your machine and is never committed.
+3. Smoke-test the model headlessly first:
+   ```bash
+   cargo run -p jaxson-llm --example llama_chat --features llama -- /path/to/model.gguf "Hi!"
+   ```
+4. Run the app with the real brain:
+   ```bash
+   JAXSON_MODEL=/path/to/model.gguf \
+     cargo run --manifest-path crates/jaxson-app/Cargo.toml --features llama
+   ```
+
+Set `JAXSON_TEMPLATE=llama3` for Llama-3 models (default is ChatML, right for Qwen).
+See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for details.
 
 The macOS app crate arrives with v0.1 (see the backlog).
 
