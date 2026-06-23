@@ -94,6 +94,11 @@ your sentiment). To run Jaxson on a real local LLM:
 Set `JAXSON_TEMPLATE=llama3` for Llama-3 models (default is ChatML, right for Qwen).
 See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for details.
 
+**Using Ollama as a model manager:** if you already have models in Ollama, just build
+with `--features llama` — the app shows a **dropdown of your installed Ollama models**
+(it reads `~/.ollama` directly; Ollama models are GGUF, no conversion needed). Pick one
+to load it; no need to hunt down blob paths.
+
 The macOS app crate arrives with v0.1 (see the backlog).
 
 ## License

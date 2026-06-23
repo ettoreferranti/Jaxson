@@ -15,6 +15,7 @@ use egui::Color32;
 use jaxson_agent::{Agent, AgentConfig, HashEmbedder};
 use jaxson_core::MoodVector;
 use jaxson_face::{face, rasterize, Bitmap};
+use jaxson_llm::ollama::{self, OllamaModel};
 use jaxson_llm::{ChatTemplate, GenerationConfig, LlmError, TextGenerator};
 
 const PERSONA: &str = "You are Jaxson, a warm, curious companion getting to know its owner.";
@@ -52,37 +53,39 @@ fn select_template() -> ChatTemplate {
     }
 }
 
-/// Use the real local model when built with `--features llama` and `JAXSON_MODEL`
-/// points at a GGUF; otherwise fall back to the demo brain.
-fn make_model() -> Box<dyn TextGenerator> {
+/// The initial brain: the real model from `$JAXSON_MODEL` when built with `--features
+/// llama`, otherwise the demo brain. Returns the model and a short status label.
+fn make_model() -> (Box<dyn TextGenerator>, String) {
     #[cfg(feature = "llama")]
     {
-        use jaxson_llm::backends::{LlamaConfig, LlamaGenerator};
-        match std::env::var("JAXSON_MODEL") {
-            Ok(path) => {
-                match LlamaGenerator::load(&LlamaConfig {
-                    model_path: path.clone().into(),
-                    ..Default::default()
-                }) {
-                    Ok(model) => {
-                        eprintln!("Loaded model: {path}");
-                        return Box::new(model);
-                    }
-                    Err(e) => eprintln!(
-                        "Failed to load JAXSON_MODEL ({path}): {e}\nFalling back to the demo brain."
-                    ),
-                }
+        if let Ok(path) = std::env::var("JAXSON_MODEL") {
+            match load_llama(std::path::Path::new(&path)) {
+                Ok(model) => return (model, format!("model: {path}")),
+                Err(e) => eprintln!("Failed to load JAXSON_MODEL ({path}): {e}"),
             }
-            Err(_) => eprintln!("JAXSON_MODEL not set; using the demo brain."),
         }
     }
-    Box::new(DemoModel)
+    (Box::new(DemoModel), "demo brain".to_string())
+}
+
+/// Load a GGUF into a boxed generator (only with the `llama` feature).
+#[cfg(feature = "llama")]
+fn load_llama(path: &std::path::Path) -> Result<Box<dyn TextGenerator>, LlmError> {
+    use jaxson_llm::backends::{LlamaConfig, LlamaGenerator};
+    let model = LlamaGenerator::load(&LlamaConfig {
+        model_path: path.to_path_buf(),
+        ..Default::default()
+    })?;
+    Ok(Box::new(model))
 }
 
 struct JaxsonApp {
     agent: Agent,
     model: Box<dyn TextGenerator>,
     embedder: HashEmbedder,
+    models: Vec<OllamaModel>,
+    selected: Option<usize>,
+    status: String,
     transcript: Vec<(&'static str, String)>,
     input: String,
     start: Instant,
@@ -96,18 +99,44 @@ impl JaxsonApp {
         let face_tex =
             cc.egui_ctx
                 .load_texture("jaxson-face", neutral, egui::TextureOptions::NEAREST);
+        let (model, status) = make_model();
         JaxsonApp {
             agent: Agent::new(PERSONA).with_config(AgentConfig {
                 template: select_template(),
                 ..Default::default()
             }),
-            model: make_model(),
+            model,
             embedder: HashEmbedder::default(),
+            models: ollama::discover(),
+            selected: None,
+            status,
             transcript: vec![("Jaxson", "Hi! I'm Jaxson. What's your name?".to_string())],
             input: String::new(),
             start: Instant::now(),
             turn: 0,
             face_tex,
+        }
+    }
+
+    /// Load the Ollama model at `index` as the active brain (needs the `llama` feature).
+    fn load_selected(&mut self, index: usize) {
+        let name = self.models[index].name.clone();
+        let path = self.models[index].path.clone();
+        #[cfg(feature = "llama")]
+        {
+            match load_llama(&path) {
+                Ok(model) => {
+                    self.model = model;
+                    self.selected = Some(index);
+                    self.status = format!("model: {name}");
+                }
+                Err(e) => self.status = format!("failed to load {name}: {e}"),
+            }
+        }
+        #[cfg(not(feature = "llama"))]
+        {
+            let _ = path;
+            self.status = format!("rebuild with --features llama to load {name}");
         }
     }
 
@@ -146,6 +175,31 @@ impl eframe::App for JaxsonApp {
                 ));
                 ui.label(format!("mood: {:?}", self.agent.mood().dominant_emotion()));
             });
+
+            // Model picker — Ollama models, plus the built-in demo brain.
+            ui.horizontal(|ui| {
+                let current = match self.selected {
+                    Some(i) => self.models[i].name.as_str(),
+                    None => "demo brain",
+                };
+                let mut to_load = None;
+                egui::ComboBox::from_label("model")
+                    .selected_text(current)
+                    .show_ui(ui, |ui| {
+                        for (i, model) in self.models.iter().enumerate() {
+                            if ui
+                                .selectable_label(self.selected == Some(i), &model.name)
+                                .clicked()
+                            {
+                                to_load = Some(i);
+                            }
+                        }
+                    });
+                if let Some(i) = to_load {
+                    self.load_selected(i);
+                }
+            });
+            ui.small(self.status.as_str());
 
             ui.separator();
 
