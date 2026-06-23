@@ -52,8 +52,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   state-gated hints + memories + history) → reply → extract+embed into graph → advance
   state. `Embedder` seam with deterministic `HashEmbedder`; mock-driven end-to-end demo.
   (Mood currently from `RelationshipState`; richer affect is F1.6.)
-- [ ] **F1.8** `jaxson-app` egui shell + face view (animated eyes/nose/mouth from
-  mood) + idle micro-motions (blink, gaze drift).
+- [x] **F1.8a** `jaxson-face`: pure face geometry — `mood` + time → eye openness,
+  mouth curve/openness, blink, gaze drift. Fully mutation-graded; no rendering.
+- [ ] **F1.8b** `jaxson-app` egui shell: render `jaxson-face` (eyes/nose/mouth) with
+  idle micro-motions, a ChatView, and wire the agent. (GUI — needs visual verification
+  on a Mac; not pure/mutation-graded.)
 - [ ] **F1.9** Chat view text I/O.
 - [ ] **F1.10** Memory inspector: browse / search / edit / delete memories & edges.
 - [ ] **F1.11** Proactive question-asking behavior gated by `familiarity`.

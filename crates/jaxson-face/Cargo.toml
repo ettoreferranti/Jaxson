@@ -1,0 +1,10 @@
+[package]
+name = "jaxson-face"
+description = "Pure geometry of Jaxson's minimal face: maps a mood (and time) to eye/mouth shapes, blinks, and gaze — no rendering."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+jaxson-core = { path = "../jaxson-core" }
