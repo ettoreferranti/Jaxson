@@ -34,8 +34,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **F1.2** `jaxson-memory` graph store: typed/weighted nodes + edges, `MemoryStore`
   trait + in-memory store (pure, mutation-graded), and encrypted-at-rest SQLite
   (SQLCipher) persistence behind the `sqlite` feature (round-trip + wrong-key tests).
-- [ ] **F1.3** Memory extraction: turn conversation turns into memory nodes/edges
-  with provenance + confidence.
+- [x] **F1.3** Memory extraction (`jaxson-extract`): turn conversation turns into
+  memory nodes/edges with provenance + confidence, via an LLM emitting JSON over the
+  `TextGenerator` seam. Pure prompt+parse layer fully mutation-graded.
 - [ ] **F1.4** Vector retrieval + graph traversal hybrid retrieval.
 - [ ] **F1.5** State machine (extend `jaxson-core`): per-topic affinity + richer
   transitions with clamped functions (heavy unit + mutation tests).

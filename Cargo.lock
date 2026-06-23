@@ -275,6 +275,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "jaxson-extract"
+version = "0.0.0"
+dependencies = [
+ "jaxson-llm",
+ "jaxson-memory",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "jaxson-llm"
 version = "0.0.0"
 dependencies = [

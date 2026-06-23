@@ -52,6 +52,9 @@ cargo run --example state_machine_demo -p jaxson-core
 
 # See LLM prompt assembly + streaming (deterministic mock backend, no model needed):
 cargo run --example chat_demo -p jaxson-llm
+
+# See a conversation turned into memory-graph nodes and edges (mock backend):
+cargo run --example extract_demo -p jaxson-extract
 ```
 
 The native `llama.cpp` + Metal backend is behind a cargo feature
