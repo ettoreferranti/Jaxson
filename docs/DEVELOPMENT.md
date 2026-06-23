@@ -79,6 +79,10 @@ weak assertions.
   memory extraction). `jaxson-core` is at **70/70 viable mutants caught (100%)** as
   of the foundation PR. New core logic must not introduce surviving mutants.
 - "Unviable" mutants (ones that don't compile) are reported separately and are fine.
+- **Excluded** (`exclude_globs` in `.cargo/mutants.toml`): the feature-gated native
+  backends (`llama.rs`, `sqlite.rs`) and the face **rasterizer** (`raster.rs`). These
+  are rendering/FFI glue verified by their own tests, on-device runs, or visual
+  inspection — not pure behavioral logic. Everything else must have zero survivors.
 - Wired into CI (backlog **F0.9**) — surviving mutants in core crates block merge.
 
 ## CI

@@ -20,6 +20,9 @@
 
 use jaxson_core::MoodVector;
 
+mod raster;
+pub use raster::{rasterize, Bitmap};
+
 /// Seconds between idle blinks.
 const BLINK_PERIOD: f64 = 4.0;
 /// How long a blink takes.
