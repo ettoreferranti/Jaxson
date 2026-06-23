@@ -6,10 +6,25 @@ This project follows the practices we standardized on previous work.
 
 - **Rust** (stable, via `rustup`) and **`cargo-mutants`**
   (`cargo install cargo-mutants --locked`). No Xcode needed.
-- macOS **Command Line Tools** (`xcode-select --install`) — provides the C toolchain
-  used to build the `llama.cpp`/whisper.cpp bindings (arrives in v0.1/v0.2). Full
-  Xcode is **not** required.
+- macOS **Command Line Tools** (`xcode-select --install`) + **`cmake`**
+  (`brew install cmake`) — only needed to build the `llama` feature (native
+  `llama.cpp`). Full Xcode is **not** required, and neither is cmake for the default
+  build/test/mutants.
 - Apple Silicon Mac (32 GB+ recommended) for running the local model.
+
+## The `llama` feature (native backend)
+
+`jaxson-llm` builds with no native deps by default and uses a deterministic
+`MockGenerator`. The real model is behind the `llama` cargo feature:
+
+```bash
+# Build/run the native llama.cpp + Metal backend (needs cmake + a GGUF model):
+cargo build -p jaxson-llm --features llama
+```
+
+It loads a local GGUF model at runtime (e.g. a 7–8B instruct model, Q4_K_M). Model
+weights are downloaded by the user, never committed (see PRIVACY-SECURITY.md §4), and
+are git-ignored. CI does **not** build this feature — it stays on the pure layer.
 
 ## Branching & PRs
 

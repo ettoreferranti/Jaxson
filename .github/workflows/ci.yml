@@ -30,7 +30,7 @@ jobs:
         run: cargo test --workspace
 
   mutants:
-    name: mutation testing (core)
+    name: mutation testing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -40,9 +40,10 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants
-      # Fails the job if any viable mutant survives in the behavioral core.
-      - name: Mutation test jaxson-core
-        run: cargo mutants --package jaxson-core
+      # Fails the job if any viable mutant survives. Runs on default features (the
+      # native llama backend is excluded via .cargo/mutants.toml).
+      - name: Mutation test workspace
+        run: cargo mutants
 
   guard:
     name: no forbidden files
