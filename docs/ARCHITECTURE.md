@@ -59,7 +59,7 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-extract` | Turn conversation turns into memory nodes/edges: extraction prompt + JSON parsing, over `dyn TextGenerator` | ✅ | **built (F1.3)** |
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
 | `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
-| `jaxson-agent` | Orchestration: wires crates into the conversation loop | ✅ | backlog |
+| `jaxson-agent` | Orchestration: the per-turn conversation loop (retrieve → prompt → reply → extract → state), with an `Embedder` seam (`HashEmbedder` stand-in) | ✅ | **built (F1.7)** |
 | `jaxson-app` | egui shell: FaceView, ChatView, MemoryInspector | ❌ | backlog (v0.1) |
 
 Native/heavy deps are always isolated behind cargo features: `jaxson-llm`'s `llama`
@@ -122,6 +122,15 @@ exchange, (c) recent mood, and produces a continuous `MoodVector`
 the face transitions naturally. **Decoupled from LLM wording** (FR-E4) for a
 consistent personality. The face view is a pure egui rendering of this mood signal
 plus idle micro-motions.
+
+**`jaxson-agent` design.** `Agent::respond` runs one turn end-to-end and is the
+integrator: it owns the persona, [`RelationshipState`], the `MemoryGraph`, and history,
+and takes the model (`dyn TextGenerator`) and an `Embedder` per call so the same agent
+runs on mock or real backends. State drives behavior (low familiarity injects an
+onboarding hint into the system prompt). Persistence is the caller's job (load via
+`with_graph`, save `graph()` through a `MemoryStore`). The `Embedder` trait has a
+deterministic `HashEmbedder` stand-in until the real model embedder (F1.4b); mood is
+read from `RelationshipState` until the affect engine (F1.6) lands.
 
 ## 6. Conversation loop (orchestration)
 

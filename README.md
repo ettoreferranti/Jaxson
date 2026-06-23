@@ -55,6 +55,9 @@ cargo run --example chat_demo -p jaxson-llm
 
 # See a conversation turned into memory-graph nodes and edges (mock backend):
 cargo run --example extract_demo -p jaxson-extract
+
+# See the whole conversation loop: retrieve → reply → learn → remember (mock backend):
+cargo run --example agent_demo -p jaxson-agent
 ```
 
 The native `llama.cpp` + Metal backend is behind a cargo feature
