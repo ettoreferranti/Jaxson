@@ -136,9 +136,11 @@ impl Agent {
             self.config
                 .template
                 .render(&assemble(&self.system_prompt(), &memories, &self.history));
-        let reply = model
+        let raw = model
             .complete(&prompt, &self.config.gen_config)
             .map_err(|e| AgentError::Generation(e.to_string()))?;
+        // Strip any <think>…</think> reasoning a model emits before its answer.
+        let reply = jaxson_llm::strip_reasoning(&raw);
         self.history.push(Message::assistant(reply.clone()));
 
         // Learn from the latest exchange.
@@ -286,6 +288,16 @@ mod tests {
 
         // The hiking memory from turn 1 is retrieved for turn 2 (shared vocabulary).
         assert!(turn2.retrieved >= 1);
+    }
+
+    #[test]
+    fn reasoning_blocks_are_stripped_from_replies() {
+        let mut model =
+            ScriptedGenerator::new(["<think>plan</think>Hello!", &extraction_json("nothing")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        let turn = agent.respond(&mut model, &embedder, 0, "hi").unwrap();
+        assert_eq!(turn.reply, "Hello!");
     }
 
     #[test]

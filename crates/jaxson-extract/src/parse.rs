@@ -138,7 +138,9 @@ fn strip_code_fences(s: &str) -> &str {
 
 /// Parse the model's raw response into an [`Extraction`].
 pub fn parse_extraction(raw: &str) -> Result<Extraction, ExtractError> {
-    let json = strip_code_fences(raw);
+    // Drop any <think>…</think> reasoning, then any Markdown code fence, then parse.
+    let without_reasoning = jaxson_llm::strip_reasoning(raw);
+    let json = strip_code_fences(&without_reasoning);
     if json.is_empty() {
         return Err(ExtractError::EmptyResponse);
     }
@@ -242,6 +244,14 @@ mod tests {
     #[test]
     fn strips_json_code_fence() {
         let raw = "```json\n{\"memories\":[{\"kind\":\"fact\",\"content\":\"x\"}]}\n```";
+        let ex = parse_extraction(raw).unwrap();
+        assert_eq!(ex.memories.len(), 1);
+    }
+
+    #[test]
+    fn strips_reasoning_before_parsing() {
+        let raw =
+            "<think>let me extract</think>{\"memories\":[{\"kind\":\"fact\",\"content\":\"x\"}]}";
         let ex = parse_extraction(raw).unwrap();
         assert_eq!(ex.memories.len(), 1);
     }

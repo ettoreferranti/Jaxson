@@ -33,9 +33,11 @@ mod error;
 mod generator;
 mod message;
 mod prompt;
+mod text;
 
 pub use config::GenerationConfig;
 pub use error::LlmError;
 pub use generator::TextGenerator;
 pub use message::{Message, Role};
 pub use prompt::{assemble, build_system_message, ChatTemplate};
+pub use text::strip_reasoning;

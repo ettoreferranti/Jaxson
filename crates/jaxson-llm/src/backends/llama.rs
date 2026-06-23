@@ -53,7 +53,9 @@ impl LlamaGenerator {
     /// Initialize the backend and load the model from disk. This is the expensive
     /// step; reuse the returned generator across turns.
     pub fn load(config: &LlamaConfig) -> Result<Self, LlmError> {
-        let backend = LlamaBackend::init().map_err(|e| LlmError::Backend(e.to_string()))?;
+        let mut backend = LlamaBackend::init().map_err(|e| LlmError::Backend(e.to_string()))?;
+        // Silence llama.cpp's verbose stderr logging.
+        backend.void_logs();
         let model_params = LlamaModelParams::default().with_n_gpu_layers(config.n_gpu_layers);
         let model = LlamaModel::load_from_file(&backend, &config.model_path, &model_params)
             .map_err(|e| LlmError::ModelLoad(e.to_string()))?;
