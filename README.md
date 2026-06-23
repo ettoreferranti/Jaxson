@@ -58,6 +58,9 @@ cargo run --example extract_demo -p jaxson-extract
 
 # See the whole conversation loop: retrieve → reply → learn → remember (mock backend):
 cargo run --example agent_demo -p jaxson-agent
+
+# See the face rendered as ASCII for several moods (no GUI):
+cargo run --example raster_demo -p jaxson-face
 ```
 
 The native `llama.cpp` + Metal backend is behind a cargo feature

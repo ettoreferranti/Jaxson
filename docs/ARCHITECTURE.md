@@ -60,8 +60,8 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
 | `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
 | `jaxson-agent` | Orchestration: the per-turn conversation loop (retrieve → prompt → reply → extract → state), with an `Embedder` seam (`HashEmbedder` stand-in) | ✅ | **built (F1.7)** |
-| `jaxson-face` | Pure face geometry: `mood` + time → eye/mouth shapes, blink, gaze (no rendering) | ✅ | **built (F1.8a)** |
-| `jaxson-app` | egui shell: renders `jaxson-face`, ChatView, MemoryInspector | ❌ | backlog (F1.8b) |
+| `jaxson-face` | Pure face geometry (`mood` + time → eye/mouth shapes, blink, gaze) **+ a software rasterizer** to a B/W `Bitmap` — no GUI | ✅ | **built (F1.8a)** |
+| `jaxson-app` | egui shell: displays the `jaxson-face` `Bitmap`, ChatView, MemoryInspector | ❌ | backlog (F1.8b) |
 
 Native/heavy deps are always isolated behind cargo features: `jaxson-llm`'s `llama`
 (`llama.cpp` + Metal), `jaxson-memory`'s `sqlite` (SQLCipher), and `jaxson-perception`
