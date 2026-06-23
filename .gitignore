@@ -1,0 +1,38 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved.bak
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# MLX / model weights — NEVER commit model files or downloaded weights
+Models/
+*.safetensors
+*.gguf
+*.npz
+*.mlx
+
+# Local user data — Jaxson's memories are private and MUST NOT be committed
+*.jaxsondb
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+UserData/
+memories/
+
+# Secrets / config
+.env
+.env.local
+*.pem
+secrets.json
+
+# macOS
+.DS_Store
+
+# Logs (we log a lot — keep them out of git)
+*.log
+Logs/
