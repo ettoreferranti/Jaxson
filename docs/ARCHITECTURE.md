@@ -56,14 +56,16 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-memory` | Memory graph (typed/weighted nodes + edges), `MemoryStore` trait + in-memory store; encrypted SQLite (SQLCipher) persistence behind the `sqlite` feature | ✅ (pure) / SQLCipher (feature) | **built (F1.2)** |
 | `jaxson-affect` | Affect engine: graph-state + sentiment → `MoodVector` + dominant `Emotion` | ✅ | backlog |
 | `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1)** |
+| `jaxson-extract` | Turn conversation turns into memory nodes/edges: extraction prompt + JSON parsing, over `dyn TextGenerator` | ✅ | **built (F1.3)** |
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
 | `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
 | `jaxson-agent` | Orchestration: wires crates into the conversation loop | ✅ | backlog |
 | `jaxson-app` | egui shell: FaceView, ChatView, MemoryInspector | ❌ | backlog (v0.1) |
 
-Only `jaxson-llm` and `jaxson-perception` touch heavy/native deps (`llama.cpp`,
-Metal, whisper.cpp); the rest are pure Rust to keep mutation testing fast and
-meaningful.
+Native/heavy deps are always isolated behind cargo features: `jaxson-llm`'s `llama`
+(`llama.cpp` + Metal), `jaxson-memory`'s `sqlite` (SQLCipher), and `jaxson-perception`
+(whisper.cpp, v0.2). Default builds are pure Rust, so mutation testing stays fast and
+meaningful and the rest of the workspace builds without a C toolchain.
 
 **`jaxson-llm` design.** The crate is split so the heavy dep is isolated: the *pure*
 layer (`Message`/`Role`, `GenerationConfig`, chat-template `prompt` assembly, the
@@ -126,7 +128,7 @@ user input
   → build prompt (persona + state + retrieved memories + history)
   → jaxson-llm: generate (streaming, Metal via llama.cpp)
   → jaxson-safety: post-filter (v0.2)
-  → jaxson-memory: extract(new_facts) → graph + state mutation
+  → jaxson-extract: extract(new_facts) → jaxson-memory graph + state mutation
   → jaxson-affect: update() → MoodVector
   → emit (text/voice + mood) to shell
   → log structured trace (NFR-4)
