@@ -28,6 +28,16 @@ impl ChatTemplate {
             ChatTemplate::Plain => render_plain(messages),
         }
     }
+
+    /// The end-of-turn token(s) generation should stop at for this template, so a model
+    /// doesn't run past its turn (and the token doesn't leak into the reply).
+    pub fn stop_tokens(self) -> &'static [&'static str] {
+        match self {
+            ChatTemplate::ChatMl => &["<|im_end|>"],
+            ChatTemplate::Llama3 => &["<|eot_id|>"],
+            ChatTemplate::Plain => &[],
+        }
+    }
 }
 
 fn render_chatml(messages: &[Message]) -> String {
@@ -119,6 +129,13 @@ mod tests {
         assert!(out.starts_with("<|begin_of_text|>"));
         assert!(out.contains("<|start_header_id|>user<|end_header_id|>\n\nHi!<|eot_id|>"));
         assert!(out.ends_with("<|start_header_id|>assistant<|end_header_id|>\n\n"));
+    }
+
+    #[test]
+    fn stop_tokens_match_the_template() {
+        assert_eq!(ChatTemplate::ChatMl.stop_tokens(), &["<|im_end|>"]);
+        assert_eq!(ChatTemplate::Llama3.stop_tokens(), &["<|eot_id|>"]);
+        assert!(ChatTemplate::Plain.stop_tokens().is_empty());
     }
 
     #[test]

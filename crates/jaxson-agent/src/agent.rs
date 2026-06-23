@@ -139,8 +139,8 @@ impl Agent {
         let raw = model
             .complete(&prompt, &self.config.gen_config)
             .map_err(|e| AgentError::Generation(e.to_string()))?;
-        // Strip any <think>…</think> reasoning a model emits before its answer.
-        let reply = jaxson_llm::strip_reasoning(&raw);
+        // Strip reasoning blocks and any leaked chat-control tokens (e.g. <|im_end|>).
+        let reply = jaxson_llm::clean_output(&raw);
         self.history.push(Message::assistant(reply.clone()));
 
         // Learn from the latest exchange.
@@ -294,6 +294,15 @@ mod tests {
     fn reasoning_blocks_are_stripped_from_replies() {
         let mut model =
             ScriptedGenerator::new(["<think>plan</think>Hello!", &extraction_json("nothing")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        let turn = agent.respond(&mut model, &embedder, 0, "hi").unwrap();
+        assert_eq!(turn.reply, "Hello!");
+    }
+
+    #[test]
+    fn chat_control_tokens_are_stripped_from_replies() {
+        let mut model = ScriptedGenerator::new(["Hello!<|im_end|>", &extraction_json("nothing")]);
         let embedder = HashEmbedder::default();
         let mut agent = Agent::new("persona");
         let turn = agent.respond(&mut model, &embedder, 0, "hi").unwrap();

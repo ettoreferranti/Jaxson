@@ -100,9 +100,19 @@ impl JaxsonApp {
             cc.egui_ctx
                 .load_texture("jaxson-face", neutral, egui::TextureOptions::NEAREST);
         let (model, status) = make_model();
+        let template = select_template();
         JaxsonApp {
             agent: Agent::new(PERSONA).with_config(AgentConfig {
-                template: select_template(),
+                template,
+                // Stop generation at the template's end-of-turn token.
+                gen_config: GenerationConfig {
+                    stop: template
+                        .stop_tokens()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                    ..Default::default()
+                },
                 ..Default::default()
             }),
             model,

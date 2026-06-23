@@ -138,9 +138,9 @@ fn strip_code_fences(s: &str) -> &str {
 
 /// Parse the model's raw response into an [`Extraction`].
 pub fn parse_extraction(raw: &str) -> Result<Extraction, ExtractError> {
-    // Drop any <think>…</think> reasoning, then any Markdown code fence, then parse.
-    let without_reasoning = jaxson_llm::strip_reasoning(raw);
-    let json = strip_code_fences(&without_reasoning);
+    // Drop reasoning + chat-control tokens, then any Markdown code fence, then parse.
+    let cleaned = jaxson_llm::clean_output(raw);
+    let json = strip_code_fences(&cleaned);
     if json.is_empty() {
         return Err(ExtractError::EmptyResponse);
     }
