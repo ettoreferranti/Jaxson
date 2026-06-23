@@ -90,12 +90,149 @@ pub fn analyze(text: &str) -> Sentiment {
     Sentiment::new(valence, arousal)
 }
 
+/// Keywords found inside `*action*` cues, with their (valence, arousal) contribution.
+/// Matched as substrings so `perk`/`perked`, `excit`/`excited`/`excitement` all hit.
+const ACTION_LEXICON: &[(&str, f64, f64)] = &[
+    ("perk", 0.6, 0.9),
+    ("excit", 0.8, 0.9),
+    ("wag", 0.9, 0.8),
+    ("bounce", 0.7, 0.9),
+    ("eager", 0.6, 0.8),
+    ("curious", 0.4, 0.7),
+    ("curiosity", 0.4, 0.7),
+    ("lean", 0.3, 0.5),
+    ("grin", 0.9, 0.6),
+    ("beam", 0.9, 0.6),
+    ("smil", 0.7, 0.4),
+    ("delight", 0.9, 0.7),
+    ("glee", 0.9, 0.8),
+    ("droop", -0.5, -0.3),
+    ("sigh", -0.4, -0.2),
+    ("frown", -0.7, 0.2),
+    ("slump", -0.6, -0.4),
+    ("whimper", -0.7, 0.3),
+    ("tuck", -0.6, -0.2),
+    ("downcast", -0.6, -0.3),
+];
+
+/// The text inside each `*…*` cue.
+fn action_spans(text: &str) -> Vec<&str> {
+    let mut spans = Vec::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('*') {
+        let after = &rest[open + 1..];
+        match after.find('*') {
+            Some(close) => {
+                spans.push(&after[..close]);
+                rest = &after[close + 1..];
+            }
+            None => break,
+        }
+    }
+    spans
+}
+
+/// Read Jaxson's expressed feeling from the `*action*` cues in its own reply (e.g.
+/// `*ears perked up with excitement*` → bright and alert). Returns
+/// [`Sentiment::NEUTRAL`] when there are no recognized cues.
+pub fn action_sentiment(text: &str) -> Sentiment {
+    let mut valence = 0.0;
+    let mut arousal = 0.0;
+    let mut hits = 0;
+    for span in action_spans(text) {
+        let lower = span.to_lowercase();
+        for (keyword, v, a) in ACTION_LEXICON {
+            if lower.contains(keyword) {
+                valence += v;
+                arousal += a;
+                hits += 1;
+            }
+        }
+    }
+    if hits == 0 {
+        return Sentiment::NEUTRAL;
+    }
+    Sentiment::new(valence / hits as f64, arousal / hits as f64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn approx(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9
+    }
+
+    #[test]
+    fn action_sentiment_reads_excited_cues_as_bright_and_alert() {
+        let s = action_sentiment("*ears perked up with excitement*");
+        assert!(s.valence > 0.0);
+        assert!(s.arousal > 0.5);
+    }
+
+    #[test]
+    fn action_sentiment_reads_sad_cues_as_negative() {
+        let s = action_sentiment("*tail tucked, a quiet whimper*");
+        assert!(s.valence < 0.0);
+    }
+
+    #[test]
+    fn action_sentiment_is_neutral_without_cues() {
+        assert_eq!(action_sentiment("just plain text"), Sentiment::NEUTRAL);
+    }
+
+    #[test]
+    fn action_sentiment_ignores_unrecognized_actions() {
+        // A cue with no lexicon keyword contributes nothing.
+        assert_eq!(action_sentiment("*waves a hand*"), Sentiment::NEUTRAL);
+    }
+
+    #[test]
+    fn every_negative_action_keyword_reads_negative() {
+        for word in [
+            "droop", "sigh", "frown", "slump", "whimper", "tuck", "downcast",
+        ] {
+            assert!(
+                action_sentiment(&format!("*{word}*")).valence < 0.0,
+                "{word} should be negative valence"
+            );
+        }
+    }
+
+    #[test]
+    fn calm_negative_actions_have_zero_arousal() {
+        // These have negative arousal, which Sentiment clamps to 0 — guards the arousal
+        // signs in the lexicon.
+        for word in ["droop", "sigh", "slump", "tuck", "downcast"] {
+            assert_eq!(
+                action_sentiment(&format!("*{word}*")).arousal,
+                0.0,
+                "{word}"
+            );
+        }
+    }
+
+    #[test]
+    fn action_sentiment_averages_multiple_keywords() {
+        // "*excited grin*" => excit (0.8, 0.9) + grin (0.9, 0.6), averaged over 2 hits.
+        let s = action_sentiment("*excited grin*");
+        assert!(approx(s.valence, (0.8 + 0.9) / 2.0));
+        assert!(approx(s.arousal, (0.9 + 0.6) / 2.0));
+    }
+
+    #[test]
+    fn action_sentiment_reads_two_separate_cues() {
+        // Needs correct span advancement to see the *second* cue.
+        let s = action_sentiment("*grin* then *droop*");
+        // grin (0.9) + droop (-0.5) over 2 hits => 0.2
+        assert!(approx(s.valence, (0.9 - 0.5) / 2.0));
+    }
+
+    #[test]
+    fn action_spans_extracts_each_cue_exactly() {
+        assert_eq!(action_spans("*grin* then *droop*"), vec!["grin", "droop"]);
+        assert_eq!(action_spans("no cues here"), Vec::<&str>::new());
+        assert_eq!(action_spans("trailing *unclosed"), Vec::<&str>::new());
     }
 
     #[test]

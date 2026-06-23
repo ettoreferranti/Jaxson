@@ -28,6 +28,30 @@ pub fn clean_output(text: &str) -> String {
     strip_special_tokens(&strip_reasoning(text))
 }
 
+/// Remove `*action*` roleplay cues (e.g. `*tail wagging*`) from text, collapsing the
+/// whitespace they leave behind. Unpaired `*` are left untouched. (Jaxson's face shows
+/// the action instead — see `jaxson_affect::action_sentiment`.)
+pub fn strip_actions(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('*') {
+        match rest[open + 1..].find('*') {
+            Some(rel_close) => {
+                out.push_str(&rest[..open]);
+                rest = &rest[open + 1 + rel_close + 1..];
+            }
+            None => break, // unpaired '*': keep the remainder as-is
+        }
+    }
+    out.push_str(rest);
+    collapse_whitespace(&out)
+}
+
+/// Collapse runs of whitespace into single spaces and trim.
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Remove `<think>…</think>` reasoning blocks that "thinking" models (e.g. Qwen3) emit
 /// before their actual answer, returning the trimmed remainder.
 ///
@@ -117,5 +141,24 @@ mod tests {
             clean_output("<think>plan</think>Hello there!<|im_end|>"),
             "Hello there!"
         );
+    }
+
+    #[test]
+    fn strip_actions_removes_roleplay_cues() {
+        assert_eq!(
+            strip_actions("*tail wagging* Oh, I love dogs! *grins*"),
+            "Oh, I love dogs!"
+        );
+        assert_eq!(strip_actions("Hi *waves* there"), "Hi there");
+    }
+
+    #[test]
+    fn strip_actions_keeps_text_without_cues() {
+        assert_eq!(strip_actions("just a normal reply"), "just a normal reply");
+    }
+
+    #[test]
+    fn strip_actions_leaves_an_unpaired_asterisk() {
+        assert_eq!(strip_actions("2 * 3 = 6"), "2 * 3 = 6");
     }
 }

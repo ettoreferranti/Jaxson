@@ -23,4 +23,4 @@ mod engine;
 mod sentiment;
 
 pub use engine::AffectEngine;
-pub use sentiment::{analyze, Sentiment};
+pub use sentiment::{action_sentiment, analyze, Sentiment};
