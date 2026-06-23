@@ -1,0 +1,18 @@
+[package]
+name = "jaxson-app"
+description = "Jaxson's desktop shell: an egui window with the animated face and a chat box."
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ettoreferranti/Jaxson"
+
+# NOTE: intentionally NOT a workspace member (see root Cargo.toml `exclude`). It pulls
+# native windowing deps and is verified by running on macOS, not by CI.
+
+[dependencies]
+eframe = "0.29"
+egui = "0.29"
+jaxson-core = { path = "../jaxson-core" }
+jaxson-face = { path = "../jaxson-face" }
+jaxson-llm = { path = "../jaxson-llm" }
+jaxson-agent = { path = "../jaxson-agent" }

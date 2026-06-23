@@ -55,9 +55,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **F1.8a** `jaxson-face`: pure face geometry (`mood` + time → eye openness, mouth
   curve/openness, blink, gaze; mutation-graded) **plus a software rasterizer** to a B/W
   `Bitmap`, validated headlessly by property tests + ASCII inspection (`raster_demo`).
-- [ ] **F1.8b** `jaxson-app` egui shell: display the `jaxson-face` `Bitmap` (animated
-  from the agent's mood + time), a ChatView, and wire the agent. (GUI — needs visual
-  verification on a Mac; not pure/mutation-graded.)
+- [x] **F1.8b** `jaxson-app` egui shell: window showing the animated face (the
+  `jaxson-face` bitmap, refreshed each frame) above a chat box, wired to a mock-backed
+  agent — the face reacts live to the sentiment of typed input. Excluded from the
+  workspace/CI (native GUI); run on macOS. Reply text is canned until a real model.
 - [ ] **F1.9** Chat view text I/O.
 - [ ] **F1.10** Memory inspector: browse / search / edit / delete memories & edges.
 - [ ] **F1.11** Proactive question-asking behavior gated by `familiarity`.

@@ -41,6 +41,21 @@ Unlike the model, this is fully testable, so **CI does build and test it** (the
 Keychain in the app), and opening with the wrong key fails. `*.jaxsondb`/`*.sqlite`
 are git-ignored.
 
+## The desktop app (`jaxson-app`)
+
+The egui GUI lives in `crates/jaxson-app` but is **excluded from the Cargo workspace**
+(root `Cargo.toml` `exclude`): it pulls native windowing deps and can't be tested
+headlessly, so CI (`--workspace` on Linux) and `cargo mutants` skip it. Build/run it
+directly on macOS:
+
+```bash
+cargo run --manifest-path crates/jaxson-app/Cargo.toml
+```
+
+It depends on the workspace crates by path. Keep logic out of it — it's a thin shell
+over `jaxson-agent` (brain) and `jaxson-face` (pixels); anything worth testing belongs
+in those crates.
+
 ## Branching & PRs
 
 - **`main` is protected and always green.** No direct commits to `main`.

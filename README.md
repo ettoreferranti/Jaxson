@@ -27,8 +27,10 @@ deletable by you. That "defect" — Ron's defect — is the whole point.
 
 ## Status
 
-🚧 **Pre-v0.1 — foundation.** This repo currently contains requirements,
-architecture, the feature backlog, and a tested core skeleton. See the docs below.
+🚧 **v0.1 in progress.** The full companion brain runs end-to-end headless
+(conversation → retrieve → reply → learn → remember → mood), and a macOS app shows the
+animated face + chat. Still mock-driven — wiring the real local model (`--features
+llama`) and voice are next. See the docs below.
 
 ## Documentation
 
@@ -61,6 +63,14 @@ cargo run --example agent_demo -p jaxson-agent
 
 # See the face rendered as ASCII for several moods (no GUI):
 cargo run --example raster_demo -p jaxson-face
+```
+
+### Run the app (macOS)
+
+```bash
+# Opens a window with Jaxson's animated face + a chat box. The face reacts live to the
+# sentiment of what you type. (Excluded from the workspace; build it directly.)
+cargo run --manifest-path crates/jaxson-app/Cargo.toml
 ```
 
 The native `llama.cpp` + Metal backend is behind a cargo feature

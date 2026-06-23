@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# The egui GUI app pulls native windowing deps and can't be tested headlessly, so it's
+# kept out of the workspace: CI (`--workspace` on Linux) and `cargo mutants` skip it.
+# Build/run it directly: `cargo run --manifest-path crates/jaxson-app/Cargo.toml`.
+exclude = ["crates/jaxson-app"]
 
 [workspace.package]
 version = "0.0.0"
