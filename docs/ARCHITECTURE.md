@@ -53,7 +53,7 @@ macOS app crate (added in v0.1) depends on them.
 | Crate | Responsibility | UI-free? | Status |
 | ----- | -------------- | -------- | ------ |
 | `jaxson-core` | Shared value types: `MoodVector`, `Emotion`, `RelationshipState`, IDs, errors | ✅ | **seeded** |
-| `jaxson-memory` | Graph nodes/edges, vector index, retrieval, memory extraction, state mutation | ✅ | backlog |
+| `jaxson-memory` | Memory graph (typed/weighted nodes + edges), `MemoryStore` trait + in-memory store; encrypted SQLite (SQLCipher) persistence behind the `sqlite` feature | ✅ (pure) / SQLCipher (feature) | **built (F1.2)** |
 | `jaxson-affect` | Affect engine: graph-state + sentiment → `MoodVector` + dominant `Emotion` | ✅ | backlog |
 | `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1)** |
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
@@ -73,6 +73,15 @@ mutation-tested and always compiles. The native `LlamaGenerator` lives behind th
 builds, tests, CI, and the rest of the workspace never need cmake or a model. The
 orchestrator depends on `dyn TextGenerator`, so the mock and the real model are
 interchangeable.
+
+**`jaxson-memory` design.** Same split. The pure layer — `MemoryNode` (kind,
+content, provenance, confidence, optional embedding), typed/weighted `Edge`
+(`strengthened`/`decayed`), the `MemoryGraph`, and the `MemoryStore` trait with an
+`InMemoryStore` — is fully mutation-tested and always compiles. The `MemoryGraph` is
+the authoritative, validated model; a `MemoryStore` gives it **snapshot** durability
+(`save`/`load`). The encrypted on-disk `SqliteStore` (SQLCipher) lives behind the
+`sqlite` feature, so default builds need no C deps. The agent depends on
+`dyn MemoryStore`, so in-memory and encrypted-SQLite are interchangeable.
 
 ## 4. The memory state machine (core design)
 
@@ -125,8 +134,10 @@ user input
 
 ## 7. Persistence
 
-- SQLite file in the app's sandbox container, **encrypted at rest** (SQLCipher or
-  app-level encryption — decided at v0.1). Holds nodes, edges, state, and history.
+- SQLite file in the app's sandbox container, **encrypted at rest via SQLCipher**
+  (decided at v0.1; `jaxson-memory`'s `sqlite` feature, `rusqlite` + vendored
+  SQLCipher). The key comes from the macOS Keychain; opening with the wrong key
+  fails. Holds nodes, edges, and (later) state and history.
 - Vector index alongside (start simple: in-memory + persisted vectors; revisit a
   dedicated index if scale requires).
 - No memory data is ever written outside the user's container; never committed to
@@ -148,5 +159,6 @@ treated as untrusted and sanitized before any privileged use.
 | A4 | `llama.cpp` (Metal) for inference | Proven on-device Metal inference; portable to the hardware bot |
 | A5 | SQLite encrypted at rest | Simple, embeddable, private; good fit for a single-owner store |
 | A6 | **Rust instead of Swift** (supersedes initial choice) | Best-in-class mutation testing (`cargo-mutants`), zero heavy-toolchain friction (no Xcode), portability to the Linux/embedded hardware-bot endgame, and owner's existing Rust fluency. Trade-off: more wiring for LLM/face vs Swift's MLX/SwiftUI, but those live in the replaceable shell layer. Decided one PR in, before any feature code. |
+| A7 | SQLCipher (not app-level encryption) for at-rest, resolving A5 | A real encrypted, queryable DB (`rusqlite` + vendored SQLCipher) beats encrypting a plaintext-SQLite file at the app layer; wrong-key access fails. Feature-gated (`sqlite`) so the pure graph layer stays C-dep-free. |
 
 _Add an entry here in the same PR whenever a structural decision changes._

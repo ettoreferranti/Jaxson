@@ -26,6 +26,21 @@ It loads a local GGUF model at runtime (e.g. a 7–8B instruct model, Q4_K_M). M
 weights are downloaded by the user, never committed (see PRIVACY-SECURITY.md §4), and
 are git-ignored. CI does **not** build this feature — it stays on the pure layer.
 
+## The `sqlite` feature (encrypted persistence)
+
+`jaxson-memory` builds with no native deps by default (pure graph + `InMemoryStore`).
+The encrypted on-disk `SqliteStore` (SQLCipher) is behind the `sqlite` feature:
+
+```bash
+# Builds vendored SQLCipher + OpenSSL (needs a C toolchain + perl):
+cargo test -p jaxson-memory --features sqlite
+```
+
+Unlike the model, this is fully testable, so **CI does build and test it** (the
+`sqlite` job). The DB is encrypted at rest; the key is supplied at `open()` (from the
+Keychain in the app), and opening with the wrong key fails. `*.jaxsondb`/`*.sqlite`
+are git-ignored.
+
 ## Branching & PRs
 
 - **`main` is protected and always green.** No direct commits to `main`.

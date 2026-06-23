@@ -29,6 +29,22 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+  sqlite:
+    name: sqlite feature (SQLCipher)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Builds vendored SQLCipher + OpenSSL from source (C toolchain + perl, present
+      # on the runner). Verifies the encrypted-at-rest persistence backend.
+      - name: Clippy (sqlite)
+        run: cargo clippy -p jaxson-memory --features sqlite --all-targets -- -D warnings
+      - name: Test (sqlite)
+        run: cargo test -p jaxson-memory --features sqlite
+
   mutants:
     name: mutation testing
     runs-on: ubuntu-latest

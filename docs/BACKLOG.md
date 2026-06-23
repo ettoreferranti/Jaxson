@@ -31,8 +31,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   fully tested + mutation-graded; native backend compile-verified.
 - [ ] **F1.1b** Benchmark latency on a Mac with a real 7–8B quantized GGUF (NFR-3):
   first-token < 1.5 s, interactive generation. Needs a downloaded model + `cmake`.
-- [ ] **F1.2** `jaxson-memory` graph store: nodes/edges + SQLite persistence
-  (encrypted at rest).
+- [x] **F1.2** `jaxson-memory` graph store: typed/weighted nodes + edges, `MemoryStore`
+  trait + in-memory store (pure, mutation-graded), and encrypted-at-rest SQLite
+  (SQLCipher) persistence behind the `sqlite` feature (round-trip + wrong-key tests).
 - [ ] **F1.3** Memory extraction: turn conversation turns into memory nodes/edges
   with provenance + confidence.
 - [ ] **F1.4** Vector retrieval + graph traversal hybrid retrieval.
