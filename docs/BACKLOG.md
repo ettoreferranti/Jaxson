@@ -44,7 +44,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   (`llama.cpp` embeddings), to populate node embeddings and embed queries for F1.4.
 - [ ] **F1.5** State machine (extend `jaxson-core`): per-topic affinity + richer
   transitions with clamped functions (heavy unit + mutation tests).
-- [ ] **F1.6** `jaxson-affect` engine v1: state + sentiment → `MoodVector`.
+- [x] **F1.6** `jaxson-affect` engine v1: relationship state + lexicon sentiment →
+  target `MoodVector`, smoothed via the state machine; wired into the agent so mood
+  moves with the conversation (Neutral→Happy on warm input). Lexicon analyzer is a
+  stand-in for a richer/LLM analyzer later.
 - [x] **F1.7** `jaxson-agent` orchestration loop: per-turn retrieve → prompt (persona +
   state-gated hints + memories + history) → reply → extract+embed into graph → advance
   state. `Embedder` seam with deterministic `HashEmbedder`; mock-driven end-to-end demo.

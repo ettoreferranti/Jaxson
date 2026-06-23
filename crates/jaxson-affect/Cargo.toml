@@ -1,0 +1,10 @@
+[package]
+name = "jaxson-affect"
+description = "Affect engine: turns relationship state + conversation sentiment into the mood that drives the face."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+jaxson-core = { path = "../jaxson-core" }

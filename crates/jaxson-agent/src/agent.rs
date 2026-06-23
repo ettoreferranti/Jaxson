@@ -1,3 +1,4 @@
+use jaxson_affect::{analyze, AffectEngine};
 use jaxson_core::{MoodVector, RelationshipEvent, RelationshipState};
 use jaxson_extract::Extractor;
 use jaxson_llm::{assemble, ChatTemplate, GenerationConfig, Message, TextGenerator};
@@ -41,8 +42,8 @@ impl Default for AgentConfig {
 pub struct Turn {
     /// Jaxson's reply text.
     pub reply: String,
-    /// Current mood (drives the face). Until the affect engine (F1.6), this reflects
-    /// the relationship state's mood.
+    /// Current mood (drives the face), updated by the affect engine from the
+    /// exchange's sentiment.
     pub mood: MoodVector,
     /// How many memories were learned this turn.
     pub learned: usize,
@@ -63,6 +64,7 @@ pub struct Agent {
     graph: MemoryGraph,
     history: Vec<Message>,
     extractor: Extractor,
+    affect: AffectEngine,
     config: AgentConfig,
 }
 
@@ -80,6 +82,7 @@ impl Agent {
             graph,
             history: Vec::new(),
             extractor: Extractor::default(),
+            affect: AffectEngine::default(),
             config: AgentConfig::default(),
         }
     }
@@ -145,6 +148,14 @@ impl Agent {
         for _ in 0..learned {
             self.state = self.state.apply(RelationshipEvent::LearnedFact);
         }
+
+        // Mood follows the sentiment of what the user said (affect engine, decoupled
+        // from the model's wording). Smoothing lives in the state machine.
+        let target = self.affect.target_mood(&self.state, analyze(user_input));
+        self.state = self.state.apply(RelationshipEvent::MoodObserved {
+            target,
+            fraction: self.affect.responsiveness,
+        });
 
         Ok(Turn {
             reply,
@@ -233,6 +244,18 @@ mod tests {
         assert_eq!(agent.graph().node_count(), 1);
         assert_eq!(agent.history().len(), 2); // user + assistant
         assert!(agent.state().familiarity() > 0.0);
+    }
+
+    #[test]
+    fn positive_input_brightens_mood() {
+        let mut model = ScriptedGenerator::new(["yay", &extraction_json("nothing notable")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("You are Jaxson.");
+        let turn = agent
+            .respond(&mut model, &embedder, 0, "I really love this!")
+            .unwrap();
+        assert!(turn.mood.valence() > 0.0);
+        assert_eq!(turn.mood, agent.mood());
     }
 
     #[test]
