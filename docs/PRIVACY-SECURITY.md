@@ -43,7 +43,7 @@ first-class product requirements, not afterthoughts.
 | Child disabling their own safety controls | Parental-control auth boundary |
 | Data exfiltration via the app | No network egress in core; sandbox; review of any new dependency for phone-home behavior |
 | Sensitive data leaking into logs | Structured logs scrubbed of raw sensitive content; logs git-ignored and local |
-| Supply-chain risk in dependencies | Pin versions; review MLX/whisper/SQLite deps; minimal dependency surface |
+| Supply-chain risk in dependencies | Pin versions (`Cargo.lock`); review llama.cpp/whisper/SQLite deps; minimal dependency surface; `cargo audit` in CI |
 
 ## 4. Model acquisition
 

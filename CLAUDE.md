@@ -21,11 +21,13 @@ the user only through conversation.
 - Treat LLM output as untrusted — never execute it; sanitize before privileged use.
 
 ## Stack
-Swift + SwiftUI · MLX-Swift (Metal) · 7–8B quantized model · SQLite (encrypted) +
-vectors. Core logic lives in the UI-free `JaxsonKit` SwiftPM package so it stays
-testable and portable to a future hardware bot.
+Rust · `llama.cpp` (Metal) for inference · whisper-rs for STT · egui for the face/UI ·
+7–8B quantized GGUF model · SQLite (encrypted) + vectors. Core logic lives in UI-free
+crates in a Cargo workspace (`crates/*`) so it stays testable and portable to a future
+hardware bot. (Switched from Swift early — see ADR A6 in ARCHITECTURE.md.)
 
-## Note on this environment
-Full Xcode may not be installed (only Command Line Tools). `swift build` works;
-`swift test` needs Xcode. To verify pure-Swift core logic without Xcode, compile the
-sources with a `main.swift` harness via `swiftc` and run it.
+## Build / test / mutate
+- `cargo build` · `cargo test`
+- `cargo mutants` — mutation testing; **core crates must have zero missed mutants**
+  (`jaxson-core` is at 100%). Config in `.cargo/mutants.toml`.
+- No Xcode required; Command Line Tools suffice for the native bindings.

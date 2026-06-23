@@ -19,10 +19,11 @@ The long-term goal is a physical bot; the near-term goal is a polished macOS app
 
 | # | Decision | Choice |
 | - | -------- | ------ |
-| D1 | Primary stack | ✅ Swift + SwiftUI (native macOS) |
-| D2 | Local LLM runtime | ✅ MLX-Swift, Metal-accelerated |
+| D1 | Primary stack | ✅ Rust (switched from Swift — see ADR A6 in ARCHITECTURE.md) |
+| D1a | Face / UI | ✅ Rust GUI via [`egui`](https://github.com/emilk/egui) (custom 2D painting for the face; single binary, portable toward embedded) |
+| D2 | Local LLM runtime | ✅ `llama.cpp` with Metal, via Rust bindings |
 | D3 | Target hardware | ✅ Apple Silicon, 32 GB+ unified memory |
-| D4 | Default model size | ✅ 7–8B params, quantized (e.g. Llama-3.1-8B-Instruct / Qwen2.5-7B) |
+| D4 | Default model size | ✅ 7–8B params, quantized GGUF (e.g. Llama-3.1-8B-Instruct / Qwen2.5-7B) |
 | D5 | Interaction modality | ✅ Voice + text (local STT via whisper.cpp, local TTS); text fallback always present |
 | D6 | Memory capture style | ✅ Organic & automatic, but fully reviewable/editable/deletable via an inspector |
 | D7 | Memory core model | ✅ Knowledge graph **as a state machine** — nodes/edges plus state variables (trust, familiarity, mood) that memories mutate and that gate behavior |
@@ -84,10 +85,10 @@ The long-term goal is a physical bot; the near-term goal is a polished macOS app
 - **NFR-4 Observability:** Extensive structured local logging (decisions, state
   transitions, retrievals) to support debugging and tuning. Logs stay on-device and
   are scrubbed of raw sensitive content where feasible.
-- **NFR-5 Testability:** Core logic lives in pure, deterministic Swift modules with
+- **NFR-5 Testability:** Core logic lives in pure, deterministic Rust crates with
   high unit-test coverage, validated by **mutation testing** (see DEVELOPMENT.md).
 - **NFR-6 Portability:** The non-UI core (memory, affect, safety, orchestration) is
-  isolated from SwiftUI so it can later run on a hardware bot.
+  isolated from the GUI so it can later run on a hardware bot.
 
 ## 5. Out of scope (for now)
 
@@ -98,7 +99,8 @@ The long-term goal is a physical bot; the near-term goal is a polished macOS app
 
 ## 6. Open questions
 
-- OQ-1: Which TTS engine gives the best on-device child-friendly voice on macOS?
-  (Candidates: AVSpeechSynthesizer, Piper, a small MLX TTS.) — to revisit at v0.2.
+- OQ-1: Which TTS engine gives the best on-device child-friendly voice from Rust?
+  (Candidates: Piper via bindings, a small local neural TTS, or shelling out to macOS
+  `say`/AVSpeech via FFI.) — to revisit at v0.2.
 - OQ-2: Exact quantization (4-bit vs 8-bit) and model pick — benchmark at v0.1.
 - OQ-3: Parental-control authentication mechanism (passcode vs. Touch ID). — v0.2.

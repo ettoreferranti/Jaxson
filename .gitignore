@@ -1,20 +1,15 @@
-# Swift / SwiftPM
-.build/
-.swiftpm/
-Package.resolved.bak
+# Rust / Cargo
+/target/
+**/*.rs.bk
+# cargo-mutants working output
+/mutants.out/
+/mutants.out.old/
 
-# Xcode
-*.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
-DerivedData/
-*.xcuserstate
-
-# MLX / model weights — NEVER commit model files or downloaded weights
+# Model weights — NEVER commit model files or downloaded weights
 Models/
 *.safetensors
 *.gguf
-*.npz
-*.mlx
+*.bin
 
 # Local user data — Jaxson's memories are private and MUST NOT be committed
 *.jaxsondb

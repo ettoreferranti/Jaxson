@@ -14,15 +14,16 @@ deletable by you. That "defect" — Ron's defect — is the whole point.
 
 - **Local-first & private.** All inference and all memory stay on-device. Nothing
   leaves the machine. See [`docs/PRIVACY-SECURITY.md`](docs/PRIVACY-SECURITY.md).
-- **Native & fast.** Swift + SwiftUI with [MLX-Swift](https://github.com/ml-explore/mlx-swift)
-  for Metal-accelerated local LLM inference on Apple Silicon.
+- **Native & fast.** Rust core with Metal-accelerated local LLM inference via
+  `llama.cpp` bindings on Apple Silicon. Chosen over Swift for best-in-class mutation
+  testing, a frictionless toolchain, and a clean path onto a future hardware bot.
 - **Memory is the agent.** A knowledge graph of memories — and the relationship
   state (trust, familiarity, mood) those memories mutate — *is* the core algorithm
   that drives Jaxson's behavior and expression.
 - **Expressive, not photorealistic.** A minimal face conveys emotion, driven by a
   dedicated affect engine rather than by the words the LLM happens to choose.
 - **Software first, hardware later.** v1 is a macOS app. If it earns its keep, the
-  same Swift core ports onto a physical bot.
+  same Rust core ports onto a physical bot.
 
 ## Status
 
@@ -42,11 +43,12 @@ architecture, the feature backlog, and a tested core skeleton. See the docs belo
 ## Building
 
 ```bash
-swift build      # builds the core engine package
-swift test       # runs the unit test suite
+cargo build              # builds the workspace
+cargo test               # runs the unit test suite
+cargo mutants            # runs mutation testing on the core (see docs/DEVELOPMENT.md)
 ```
 
-The macOS app target arrives with v0.1 (see the backlog).
+The macOS app crate arrives with v0.1 (see the backlog).
 
 ## License
 

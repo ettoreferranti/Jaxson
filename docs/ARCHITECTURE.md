@@ -8,9 +8,9 @@ structure must update this file in the same PR.
 1. **The memory graph *is* the agent.** Behavior, mood, and initiative emerge from a
    knowledge graph and the relationship-state variables that memories mutate. The LLM
    is a language surface over that state, not the seat of personality.
-2. **Separation of core from shell.** All decision logic lives in plain Swift
-   modules with no SwiftUI dependency, so the same core can later drive a hardware
-   bot. SwiftUI is a thin presentation/IO shell.
+2. **Separation of core from shell.** All decision logic lives in plain Rust crates
+   with no GUI dependency, so the same core can later drive a hardware bot. The GUI
+   (egui) is a thin presentation/IO shell.
 3. **Local & private by construction.** No module is permitted to open a network
    socket for inference, memory, or telemetry.
 
@@ -18,24 +18,24 @@ structure must update this file in the same PR.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Presentation shell  (SwiftUI, macOS)                              │
-│  • FaceView (eyes/nose/mouth, Metal/Canvas)                        │
+│  Presentation shell  (egui, macOS)                                 │
+│  • FaceView (eyes/nose/mouth, egui Painter 2D)                     │
 │  • ChatView (text I/O)                                             │
 │  • MemoryInspectorView                                             │
 │  • (v0.2) Voice I/O surface, Parental-control UI                   │
 └───────────────▲───────────────────────────────┬──────────────────┘
                 │ observes (mood, transcript)    │ user input
 ┌───────────────┴───────────────────────────────▼──────────────────┐
-│  Orchestration  (JaxsonAgent)                                      │
+│  Orchestration  (jaxson-agent)                                     │
 │  Conversation loop: input → retrieve → prompt → generate →         │
 │  safety-filter → extract memories → update state → emit response   │
 └───┬───────────┬────────────┬───────────┬───────────┬──────────────┘
     │           │            │           │           │
-┌───▼───┐  ┌────▼────┐  ┌────▼─────┐ ┌───▼────┐  ┌───▼──────┐
-│ LLM   │  │ Memory  │  │ Affect   │ │ Safety │  │ Perception│
-│ MLX   │  │ Graph + │  │ Engine   │ │ Guard  │  │ STT (v0.2)│
-│ engine│  │ Vector  │  │ mood vec │ │ (v0.2) │  │ TTS (v0.2)│
-└───────┘  │ + State │  └──────────┘ └────────┘  └───────────┘
+┌───▼─────┐ ┌──▼──────┐  ┌────▼─────┐ ┌───▼────┐  ┌───▼──────┐
+│ LLM     │ │ Memory  │  │ Affect   │ │ Safety │  │ Perception│
+│llama.cpp│ │ Graph + │  │ Engine   │ │ Guard  │  │ STT (v0.2)│
+│ (Metal) │ │ Vector  │  │ mood vec │ │ (v0.2) │  │ TTS (v0.2)│
+└─────────┘ │ + State │  └──────────┘ └────────┘  └───────────┘
            │ machine │
            └────┬────┘
         ┌───────▼────────┐
@@ -45,24 +45,25 @@ structure must update this file in the same PR.
         └────────────────┘
 ```
 
-## 3. Swift package / module map
+## 3. Cargo workspace / crate map
 
-The non-UI core is a SwiftPM package (`JaxsonKit`) of independently testable
-libraries. The macOS app (added in v0.1) depends on it.
+The non-UI core is a set of independently testable crates in a Cargo workspace. The
+macOS app crate (added in v0.1) depends on them.
 
-| Module | Responsibility | UI-free? | Status |
-| ------ | -------------- | -------- | ------ |
-| `JaxsonCore` | Shared value types: `MoodVector`, `Emotion`, `RelationshipState`, IDs, errors | ✅ | **seeded** |
-| `JaxsonMemory` | Graph nodes/edges, vector index, retrieval, memory extraction, state mutation | ✅ | backlog |
-| `JaxsonAffect` | Affect engine: graph-state + sentiment → `MoodVector` + dominant `Emotion` | ✅ | backlog |
-| `JaxsonLLM` | MLX-Swift wrapper: model load, prompt assembly, streaming generation | ✅ (Metal) | backlog |
-| `JaxsonSafety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
-| `JaxsonPerception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
-| `JaxsonAgent` | Orchestration: wires modules into the conversation loop | ✅ | backlog |
-| `JaxsonApp` (Xcode) | SwiftUI shell: FaceView, ChatView, MemoryInspector | ❌ | backlog (v0.1) |
+| Crate | Responsibility | UI-free? | Status |
+| ----- | -------------- | -------- | ------ |
+| `jaxson-core` | Shared value types: `MoodVector`, `Emotion`, `RelationshipState`, IDs, errors | ✅ | **seeded** |
+| `jaxson-memory` | Graph nodes/edges, vector index, retrieval, memory extraction, state mutation | ✅ | backlog |
+| `jaxson-affect` | Affect engine: graph-state + sentiment → `MoodVector` + dominant `Emotion` | ✅ | backlog |
+| `jaxson-llm` | `llama.cpp` (Metal) bindings: model load, prompt assembly, streaming generation | ✅ (Metal) | backlog |
+| `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
+| `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
+| `jaxson-agent` | Orchestration: wires crates into the conversation loop | ✅ | backlog |
+| `jaxson-app` | egui shell: FaceView, ChatView, MemoryInspector | ❌ | backlog (v0.1) |
 
-Only `JaxsonLLM` and `JaxsonPerception` touch heavy/native deps (MLX, Metal,
-whisper.cpp); the rest are pure Swift to keep mutation testing fast and meaningful.
+Only `jaxson-llm` and `jaxson-perception` touch heavy/native deps (`llama.cpp`,
+Metal, whisper.cpp); the rest are pure Rust to keep mutation testing fast and
+meaningful.
 
 ## 4. The memory state machine (core design)
 
@@ -95,20 +96,20 @@ Reads (a) current relationship-state variables, (b) sentiment of the latest
 exchange, (c) recent mood, and produces a continuous `MoodVector`
 (valence/arousal) plus a snapped dominant `Emotion`. Output is smoothed over time so
 the face transitions naturally. **Decoupled from LLM wording** (FR-E4) for a
-consistent personality. The FaceView is a pure rendering of this mood signal plus
-idle micro-motions.
+consistent personality. The face view is a pure egui rendering of this mood signal
+plus idle micro-motions.
 
 ## 6. Conversation loop (orchestration)
 
 ```
 user input
-  → JaxsonSafety.preFilter (v0.2)
-  → JaxsonMemory.retrieve(context)         // graph + vector
+  → jaxson-safety: pre-filter (v0.2)
+  → jaxson-memory: retrieve(context)       // graph + vector
   → build prompt (persona + state + retrieved memories + history)
-  → JaxsonLLM.generate (streaming, Metal)
-  → JaxsonSafety.postFilter (v0.2)
-  → JaxsonMemory.extract(newFacts) → graph + state mutation
-  → JaxsonAffect.update() → MoodVector
+  → jaxson-llm: generate (streaming, Metal via llama.cpp)
+  → jaxson-safety: post-filter (v0.2)
+  → jaxson-memory: extract(new_facts) → graph + state mutation
+  → jaxson-affect: update() → MoodVector
   → emit (text/voice + mood) to shell
   → log structured trace (NFR-4)
 ```
@@ -132,10 +133,11 @@ treated as untrusted and sanitized before any privileged use.
 
 | ID | Decision | Rationale |
 | -- | -------- | --------- |
-| A1 | Swift core split from SwiftUI shell | Portability to hardware bot; fast, UI-free mutation testing |
+| A1 | Rust core split from GUI shell | Portability to hardware bot; fast, UI-free mutation testing |
 | A2 | Memory graph as state machine | Owner's core vision; deterministic, testable, explainable behavior |
 | A3 | Affect engine decoupled from LLM | Consistent personality independent of token-level wording |
-| A4 | MLX-Swift for inference | Native Metal on Apple Silicon, Swift-native, on-device |
+| A4 | `llama.cpp` (Metal) for inference | Proven on-device Metal inference; portable to the hardware bot |
 | A5 | SQLite encrypted at rest | Simple, embeddable, private; good fit for a single-owner store |
+| A6 | **Rust instead of Swift** (supersedes initial choice) | Best-in-class mutation testing (`cargo-mutants`), zero heavy-toolchain friction (no Xcode), portability to the Linux/embedded hardware-bot endgame, and owner's existing Rust fluency. Trade-off: more wiring for LLM/face vs Swift's MLX/SwiftUI, but those live in the replaceable shell layer. Decided one PR in, before any feature code. |
 
 _Add an entry here in the same PR whenever a structural decision changes._

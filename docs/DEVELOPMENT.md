@@ -4,10 +4,11 @@ This project follows the practices we standardized on previous work.
 
 ## Prerequisites
 
-- **Full Xcode** (not just the Command Line Tools). The SwiftUI app, MLX/Metal, and
-  the XCTest-based `swift test` suite all require it. With only the Command Line
-  Tools installed, `swift build` works but `swift test` reports `no such module
-  'XCTest'`. Install Xcode and run `sudo xcode-select -s /Applications/Xcode.app`.
+- **Rust** (stable, via `rustup`) and **`cargo-mutants`**
+  (`cargo install cargo-mutants --locked`). No Xcode needed.
+- macOS **Command Line Tools** (`xcode-select --install`) — provides the C toolchain
+  used to build the `llama.cpp`/whisper.cpp bindings (arrives in v0.1/v0.2). Full
+  Xcode is **not** required.
 - Apple Silicon Mac (32 GB+ recommended) for running the local model.
 
 ## Branching & PRs
@@ -26,10 +27,10 @@ This project follows the practices we standardized on previous work.
 
 ## Testing
 
-- Core logic lives in pure, deterministic Swift modules (no SwiftUI) so it is fast
-  and meaningful to test.
-- `swift test` must pass before requesting review.
-- Aim for high coverage on `JaxsonCore`, `JaxsonMemory`, `JaxsonAffect`, and the
+- Core logic lives in pure, deterministic Rust crates (no GUI) so it is fast and
+  meaningful to test.
+- `cargo test` must pass before requesting review.
+- Aim for high coverage on `jaxson-core`, `jaxson-memory`, `jaxson-affect`, and the
   state-machine transition functions especially — these encode the agent's behavior.
 
 ### Mutation testing
@@ -39,22 +40,25 @@ We use **mutation testing** to grade test quality: the tool injects small faults
 (mutants) into the code and checks that some test fails. Surviving mutants reveal
 weak assertions.
 
-- Tooling: [**muter**](https://github.com/muter-mutation-testing/muter) for Swift.
+- Tooling: [**`cargo-mutants`**](https://mutants.rs/). Config in `.cargo/mutants.toml`.
 - Run locally:
   ```bash
-  muter run            # mutate + run the suite, report surviving mutants
+  cargo mutants        # mutate + run the suite, report surviving mutants
   ```
-- Target: a high mutation score on the behavioral core (state machine, affect,
-  memory extraction). New core logic should not *lower* the score.
-- Wired into CI (backlog **F0.9**) — surviving mutants in core modules block merge.
+- **Target: zero missed mutants on the behavioral core** (state machine, affect,
+  memory extraction). `jaxson-core` is at **70/70 viable mutants caught (100%)** as
+  of the foundation PR. New core logic must not introduce surviving mutants.
+- "Unviable" mutants (ones that don't compile) are reported separately and are fine.
+- Wired into CI (backlog **F0.9**) — surviving mutants in core crates block merge.
 
 ## CI (backlog F0.8)
 
 GitHub Actions on macOS runners:
-1. `swift build`
-2. `swift test`
-3. `muter run` on core modules (once F0.9 lands)
-4. Secret scan / ensure no model weights or user data are committed.
+1. `cargo build`
+2. `cargo test`
+3. `cargo fmt --check` and `cargo clippy -D warnings`
+4. `cargo mutants` on core crates (once F0.9 lands)
+5. Secret scan / ensure no model weights or user data are committed.
 
 ## Logging
 
