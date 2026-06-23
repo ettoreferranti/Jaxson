@@ -1,0 +1,13 @@
+[package]
+name = "jaxson-core"
+description = "Shared, deterministic value types: the agent's state-machine primitives."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

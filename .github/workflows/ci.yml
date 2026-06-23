@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+# NOTE: we run on ubuntu-latest while the workspace is pure Rust (cheaper + faster).
+# Switch to macos-latest once native Metal deps (llama.cpp, whisper) land in v0.1/v0.2.
+jobs:
+  test:
+    name: fmt · clippy · build · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Formatting
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Build
+        run: cargo build --workspace --all-targets
+      - name: Test
+        run: cargo test --workspace
+
+  mutants:
+    name: mutation testing (core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      # Fails the job if any viable mutant survives in the behavioral core.
+      - name: Mutation test jaxson-core
+        run: cargo mutants --package jaxson-core
+
+  guard:
+    name: no forbidden files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Ensure no model weights / user data / secrets are tracked
+        run: |
+          forbidden=$(git ls-files \
+            | grep -E '\.(gguf|safetensors|bin|sqlite|pem)$|(^|/)\.env$|^(Models|UserData|memories|Logs)/' \
+            || true)
+          if [ -n "$forbidden" ]; then
+            echo "::error::Forbidden file(s) tracked (weights/user-data/secrets):"
+            echo "$forbidden"
+            exit 1
+          fi
+          echo "OK: no forbidden files tracked"

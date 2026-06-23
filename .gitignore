@@ -1,0 +1,33 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+# cargo-mutants working output
+/mutants.out/
+/mutants.out.old/
+
+# Model weights — NEVER commit model files or downloaded weights
+Models/
+*.safetensors
+*.gguf
+*.bin
+
+# Local user data — Jaxson's memories are private and MUST NOT be committed
+*.jaxsondb
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+UserData/
+memories/
+
+# Secrets / config
+.env
+.env.local
+*.pem
+secrets.json
+
+# macOS
+.DS_Store
+
+# Logs (we log a lot — keep them out of git)
+*.log
+Logs/
