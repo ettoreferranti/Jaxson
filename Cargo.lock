@@ -305,6 +305,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "jaxson-face"
+version = "0.0.0"
+dependencies = [
+ "jaxson-core",
+]
+
+[[package]]
 name = "jaxson-llm"
 version = "0.0.0"
 dependencies = [
