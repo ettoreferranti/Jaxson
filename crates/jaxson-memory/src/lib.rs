@@ -23,11 +23,13 @@
 mod edge;
 mod graph;
 mod node;
+mod retrieval;
 mod store;
 
 pub use edge::{Edge, Relation};
 pub use graph::{GraphError, MemoryGraph};
 pub use node::{MemoryId, MemoryKind, MemoryNode, Provenance};
+pub use retrieval::{cosine_similarity, retrieve, RetrievalParams, Retrieved};
 pub use store::{InMemoryStore, MemoryStore, StoreError};
 
 #[cfg(feature = "sqlite")]

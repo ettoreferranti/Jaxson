@@ -53,7 +53,7 @@ macOS app crate (added in v0.1) depends on them.
 | Crate | Responsibility | UI-free? | Status |
 | ----- | -------------- | -------- | ------ |
 | `jaxson-core` | Shared value types: `MoodVector`, `Emotion`, `RelationshipState`, IDs, errors | ✅ | **seeded** |
-| `jaxson-memory` | Memory graph (typed/weighted nodes + edges), `MemoryStore` trait + in-memory store; encrypted SQLite (SQLCipher) persistence behind the `sqlite` feature | ✅ (pure) / SQLCipher (feature) | **built (F1.2)** |
+| `jaxson-memory` | Memory graph (typed/weighted nodes + edges), hybrid retrieval (cosine + graph spread), `MemoryStore` trait + in-memory store; encrypted SQLite (SQLCipher) persistence behind the `sqlite` feature | ✅ (pure) / SQLCipher (feature) | **built (F1.2, F1.4)** |
 | `jaxson-affect` | Affect engine: graph-state + sentiment → `MoodVector` + dominant `Emotion` | ✅ | backlog |
 | `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1)** |
 | `jaxson-extract` | Turn conversation turns into memory nodes/edges: extraction prompt + JSON parsing, over `dyn TextGenerator` | ✅ | **built (F1.3)** |
@@ -106,9 +106,13 @@ Derived, persisted scalars that summarize the relationship and gate behavior:
 - `trust` below a threshold → sensitive topics stay locked.
 - `affinity` per topic → influences what Jaxson brings up and the baseline mood.
 
-### 4.4 Retrieval
-Hybrid: vector similarity over node embeddings **+** graph traversal from the active
-focus node, merged and ranked, injected into the LLM prompt.
+### 4.4 Retrieval (`retrieve`, F1.4)
+Hybrid and pure: **cosine similarity** over node embeddings seeds the relevant nodes,
+then relevance **spreads along weighted edges** (max-product relaxation, `graph_decay`
+per hop up to `max_hops`) so associated memories — even ones without embeddings —
+surface too. Results are ranked by score (ties broken by id for determinism) and
+capped at `top_k`, then injected into the LLM prompt. The query embedding is an input;
+turning text into an embedding is a later concern that needs the model.
 
 ## 5. Affect engine
 
