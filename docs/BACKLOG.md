@@ -25,8 +25,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Milestone v0.1 — Talking face + memory (text-first)
 
-- [ ] **F1.1** `jaxson-llm`: `llama.cpp` (Metal) bindings — load a 7–8B quantized
-  GGUF model, streaming generation, prompt assembly. Benchmark latency (NFR-3).
+- [x] **F1.1** `jaxson-llm`: chat messages, chat-template prompt assembly, decode
+  config, `TextGenerator` trait + deterministic mock, and a `llama.cpp` (Metal)
+  backend behind the `llama` feature (loads a GGUF, streaming generation). Pure layer
+  fully tested + mutation-graded; native backend compile-verified.
+- [ ] **F1.1b** Benchmark latency on a Mac with a real 7–8B quantized GGUF (NFR-3):
+  first-token < 1.5 s, interactive generation. Needs a downloaded model + `cmake`.
 - [ ] **F1.2** `jaxson-memory` graph store: nodes/edges + SQLite persistence
   (encrypted at rest).
 - [ ] **F1.3** Memory extraction: turn conversation turns into memory nodes/edges

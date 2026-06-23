@@ -49,7 +49,14 @@ cargo mutants            # runs mutation testing on the core (see docs/DEVELOPME
 
 # See the relationship state machine evolve over a scripted conversation:
 cargo run --example state_machine_demo -p jaxson-core
+
+# See LLM prompt assembly + streaming (deterministic mock backend, no model needed):
+cargo run --example chat_demo -p jaxson-llm
 ```
+
+The native `llama.cpp` + Metal backend is behind a cargo feature
+(`cargo build -p jaxson-llm --features llama`); it needs `cmake` and a local GGUF
+model. See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 The macOS app crate arrives with v0.1 (see the backlog).
 

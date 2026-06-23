@@ -1,0 +1,22 @@
+[package]
+name = "jaxson-llm"
+description = "Local LLM orchestration: chat messages, prompt assembly, and a pluggable text-generation backend (llama.cpp + Metal)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Native llama.cpp backend with Metal offload. Requires cmake + a C/C++ toolchain at
+# BUILD time and a local GGUF model at RUNTIME. Not built in CI — see docs/DEVELOPMENT.md.
+llama = ["dep:llama-cpp-2", "dep:encoding_rs"]
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+llama-cpp-2 = { version = "0.1.150", optional = true }
+encoding_rs = { version = "0.8", optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

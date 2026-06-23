@@ -55,7 +55,7 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-core` | Shared value types: `MoodVector`, `Emotion`, `RelationshipState`, IDs, errors | ✅ | **seeded** |
 | `jaxson-memory` | Graph nodes/edges, vector index, retrieval, memory extraction, state mutation | ✅ | backlog |
 | `jaxson-affect` | Affect engine: graph-state + sentiment → `MoodVector` + dominant `Emotion` | ✅ | backlog |
-| `jaxson-llm` | `llama.cpp` (Metal) bindings: model load, prompt assembly, streaming generation | ✅ (Metal) | backlog |
+| `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1)** |
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
 | `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
 | `jaxson-agent` | Orchestration: wires crates into the conversation loop | ✅ | backlog |
@@ -64,6 +64,15 @@ macOS app crate (added in v0.1) depends on them.
 Only `jaxson-llm` and `jaxson-perception` touch heavy/native deps (`llama.cpp`,
 Metal, whisper.cpp); the rest are pure Rust to keep mutation testing fast and
 meaningful.
+
+**`jaxson-llm` design.** The crate is split so the heavy dep is isolated: the *pure*
+layer (`Message`/`Role`, `GenerationConfig`, chat-template `prompt` assembly, the
+`TextGenerator` trait, and a deterministic `MockGenerator`) is fully unit- and
+mutation-tested and always compiles. The native `LlamaGenerator` lives behind the
+`llama` cargo feature (`llama-cpp-2` → `llama.cpp` with Metal offload), so default
+builds, tests, CI, and the rest of the workspace never need cmake or a model. The
+orchestrator depends on `dyn TextGenerator`, so the mock and the real model are
+interchangeable.
 
 ## 4. The memory state machine (core design)
 
