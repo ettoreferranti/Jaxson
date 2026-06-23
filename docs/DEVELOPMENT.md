@@ -56,6 +56,12 @@ It depends on the workspace crates by path. Keep logic out of it — it's a thin
 over `jaxson-agent` (brain) and `jaxson-face` (pixels); anything worth testing belongs
 in those crates.
 
+To run on the **real local model** (instead of the mock demo brain), build with
+`--features llama` and point `JAXSON_MODEL` at a GGUF; `JAXSON_TEMPLATE` (chatml/llama3/
+plain) picks the chat format. See the README's "Use the real local model" section.
+Validate a model in isolation first with the headless `jaxson-llm` example:
+`cargo run -p jaxson-llm --example llama_chat --features llama -- <model.gguf>`.
+
 ## Branching & PRs
 
 - **`main` is protected and always green.** No direct commits to `main`.

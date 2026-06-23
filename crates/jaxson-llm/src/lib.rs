@@ -26,6 +26,7 @@
 //! ```
 
 pub mod backends;
+pub mod ollama;
 
 mod config;
 mod error;

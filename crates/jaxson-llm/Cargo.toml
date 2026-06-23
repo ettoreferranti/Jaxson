@@ -14,9 +14,10 @@ llama = ["dep:llama-cpp-2", "dep:encoding_rs"]
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 llama-cpp-2 = { version = "0.1.150", optional = true }
 encoding_rs = { version = "0.8", optional = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+tempfile = { workspace = true }

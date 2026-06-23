@@ -319,6 +319,7 @@ dependencies = [
  "llama-cpp-2",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
 ]
 
