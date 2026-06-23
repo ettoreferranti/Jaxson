@@ -46,6 +46,9 @@ architecture, the feature backlog, and a tested core skeleton. See the docs belo
 cargo build              # builds the workspace
 cargo test               # runs the unit test suite
 cargo mutants            # runs mutation testing on the core (see docs/DEVELOPMENT.md)
+
+# See the relationship state machine evolve over a scripted conversation:
+cargo run --example state_machine_demo -p jaxson-core
 ```
 
 The macOS app crate arrives with v0.1 (see the backlog).

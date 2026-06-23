@@ -19,8 +19,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   `Emotion`, `RelationshipState`) and unit tests.
 - [x] **F0.9** Mutation testing set up (`cargo-mutants`, `.cargo/mutants.toml`):
   `jaxson-core` at 70/70 viable mutants caught (100%).
-- [ ] **F0.8** CI: GitHub Actions on macOS running `cargo build`/`test`/`fmt`/`clippy`
-  + `cargo mutants` on core crates (block merge on surviving mutants).
+- [x] **F0.8** CI: GitHub Actions (`cargo build`/`test`/`fmt`/`clippy` + `cargo mutants`
+  on core crates + forbidden-file guard). Blocks merge on surviving mutants.
+- [x] **F0.10** Runnable `state_machine_demo` example to visualize core behavior.
 
 ## Milestone v0.1 — Talking face + memory (text-first)
 

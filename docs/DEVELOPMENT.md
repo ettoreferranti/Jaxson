@@ -51,14 +51,19 @@ weak assertions.
 - "Unviable" mutants (ones that don't compile) are reported separately and are fine.
 - Wired into CI (backlog **F0.9**) — surviving mutants in core crates block merge.
 
-## CI (backlog F0.8)
+## CI
 
-GitHub Actions on macOS runners:
-1. `cargo build`
-2. `cargo test`
-3. `cargo fmt --check` and `cargo clippy -D warnings`
-4. `cargo mutants` on core crates (once F0.9 lands)
-5. Secret scan / ensure no model weights or user data are committed.
+GitHub Actions (`.github/workflows/ci.yml`) runs on every PR and on pushes to `main`,
+in three jobs:
+1. **fmt · clippy · build · test** — `cargo fmt --check`, `cargo clippy --all-targets
+   -D warnings`, `cargo build`, `cargo test`.
+2. **mutation testing** — `cargo mutants --package jaxson-core`; a surviving viable
+   mutant fails the job and blocks merge.
+3. **guard** — fails if any model weights, user data, or secrets are tracked.
+
+Runs on `ubuntu-latest` while the workspace is pure Rust (faster, ~10× cheaper than
+macOS minutes). Switch to `macos-latest` once native Metal deps (`llama.cpp`,
+whisper) arrive in v0.1/v0.2.
 
 ## Logging
 
