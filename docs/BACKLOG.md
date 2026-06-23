@@ -37,7 +37,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **F1.3** Memory extraction (`jaxson-extract`): turn conversation turns into
   memory nodes/edges with provenance + confidence, via an LLM emitting JSON over the
   `TextGenerator` seam. Pure prompt+parse layer fully mutation-graded.
-- [ ] **F1.4** Vector retrieval + graph traversal hybrid retrieval.
+- [x] **F1.4** Hybrid retrieval (`jaxson-memory::retrieve`): cosine-similarity seeds +
+  weighted graph spread (decay per hop), ranked top-k. Query embedding is an input;
+  text→embedding wiring deferred to model integration.
+- [ ] **F1.4b** Embedder: produce embedding vectors from text via the local model
+  (`llama.cpp` embeddings), to populate node embeddings and embed queries for F1.4.
 - [ ] **F1.5** State machine (extend `jaxson-core`): per-topic affinity + richer
   transitions with clamped functions (heavy unit + mutation tests).
 - [ ] **F1.6** `jaxson-affect` engine v1: state + sentiment → `MoodVector`.
