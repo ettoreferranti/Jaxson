@@ -26,8 +26,8 @@ fn main() {
     let user_turns = [
         "Hello there!",
         "I'm Ettore.",
-        "I have a dog named Pixel.",
-        "What should Pixel and I do about hiking this weekend?",
+        "I have a dog named Pixel and I love her to bits!",
+        "Hiking with Pixel is the best, I'm so happy!",
     ];
 
     let mut agent =

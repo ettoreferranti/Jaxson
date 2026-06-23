@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 thiserror = { workspace = true }
 jaxson-core = { path = "../jaxson-core" }
+jaxson-affect = { path = "../jaxson-affect" }
 jaxson-llm = { path = "../jaxson-llm" }
 jaxson-memory = { path = "../jaxson-memory" }
 jaxson-extract = { path = "../jaxson-extract" }

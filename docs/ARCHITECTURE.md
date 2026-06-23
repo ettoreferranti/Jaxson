@@ -54,7 +54,7 @@ macOS app crate (added in v0.1) depends on them.
 | ----- | -------------- | -------- | ------ |
 | `jaxson-core` | Shared value types: `MoodVector`, `Emotion`, `RelationshipState`, IDs, errors | ✅ | **seeded** |
 | `jaxson-memory` | Memory graph (typed/weighted nodes + edges), hybrid retrieval (cosine + graph spread), `MemoryStore` trait + in-memory store; encrypted SQLite (SQLCipher) persistence behind the `sqlite` feature | ✅ (pure) / SQLCipher (feature) | **built (F1.2, F1.4)** |
-| `jaxson-affect` | Affect engine: graph-state + sentiment → `MoodVector` + dominant `Emotion` | ✅ | backlog |
+| `jaxson-affect` | Affect engine: relationship state + (lexicon) sentiment → target `MoodVector`; smoothing via the state machine | ✅ | **built (F1.6)** |
 | `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1)** |
 | `jaxson-extract` | Turn conversation turns into memory nodes/edges: extraction prompt + JSON parsing, over `dyn TextGenerator` | ✅ | **built (F1.3)** |
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
@@ -114,14 +114,17 @@ surface too. Results are ranked by score (ties broken by id for determinism) and
 capped at `top_k`, then injected into the LLM prompt. The query embedding is an input;
 turning text into an embedding is a later concern that needs the model.
 
-## 5. Affect engine
+## 5. Affect engine (`jaxson-affect`, F1.6)
 
-Reads (a) current relationship-state variables, (b) sentiment of the latest
-exchange, (c) recent mood, and produces a continuous `MoodVector`
-(valence/arousal) plus a snapped dominant `Emotion`. Output is smoothed over time so
-the face transitions naturally. **Decoupled from LLM wording** (FR-E4) for a
-consistent personality. The face view is a pure egui rendering of this mood signal
-plus idle micro-motions.
+`AffectEngine::target_mood` reads (a) relationship-state variables (trust/familiarity
+add a warmth baseline) and (b) the sentiment of the latest exchange, producing a target
+`MoodVector` (valence/arousal); `dominant_emotion()` snaps it to a discrete `Emotion`
+for the face. Smoothing toward the target reuses `MoodVector::blended` — the
+orchestrator applies it through the state machine's `MoodObserved` event, keeping
+`RelationshipState` the single source of truth. Sentiment comes from a deterministic
+lexicon ([`analyze`]) — **decoupled from LLM wording** (FR-E4) — to be upgraded later.
+The face view (F1.8) will be a pure egui rendering of this mood signal plus idle
+micro-motions.
 
 **`jaxson-agent` design.** `Agent::respond` runs one turn end-to-end and is the
 integrator: it owns the persona, [`RelationshipState`], the `MemoryGraph`, and history,
@@ -129,8 +132,9 @@ and takes the model (`dyn TextGenerator`) and an `Embedder` per call so the same
 runs on mock or real backends. State drives behavior (low familiarity injects an
 onboarding hint into the system prompt). Persistence is the caller's job (load via
 `with_graph`, save `graph()` through a `MemoryStore`). The `Embedder` trait has a
-deterministic `HashEmbedder` stand-in until the real model embedder (F1.4b); mood is
-read from `RelationshipState` until the affect engine (F1.6) lands.
+deterministic `HashEmbedder` stand-in until the real model embedder (F1.4b). Each turn
+it also reads sentiment of the user's input and applies the affect engine's target mood
+to the state machine (`MoodObserved`), so `mood()` reflects the conversation.
 
 ## 6. Conversation loop (orchestration)
 
