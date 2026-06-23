@@ -10,7 +10,7 @@ Jaxson is a privacy-first virtual companion that runs locally on macOS. It is
 inspired by the B-bot from *Ron's Gone Wrong*, but inverts the film's premise: where
 B-bots are pre-loaded with scraped personal data, **Jaxson begins knowing nothing**
 and earns its understanding of the user through conversation. The companion is
-embodied by a deliberately minimal animated face (two eyes, a nose, a mouth) that
+embodied by a deliberately minimal animated face (two eyes and a mouth) that
 communicates emotion expressively.
 
 The long-term goal is a physical bot; the near-term goal is a polished macOS app.
@@ -54,7 +54,8 @@ The long-term goal is a physical bot; the near-term goal is a polished macOS app
   higher trust → more personal topics unlocked.
 
 ### 3.3 Expression / face
-- **FR-E1** A minimal face renders two eyes, a nose, and a mouth.
+- **FR-E1** A minimal face renders two eyes and a mouth. (The nose was dropped as a
+  design choice during F1.8 — a cleaner, B-bot-style look.)
 - **FR-E2** A dedicated affect engine produces a continuous **mood vector**
   (valence/arousal) plus a discrete dominant emotion; the face animates from it.
 - **FR-E3** Idle micro-motions (blinking, gaze drift, subtle breathing) keep the

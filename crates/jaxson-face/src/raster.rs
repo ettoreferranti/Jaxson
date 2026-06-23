@@ -1,7 +1,7 @@
 //! A tiny pure software rasterizer: turn a [`Face`] into a square black-and-white
-//! [`Bitmap`]. No GUI — so the look of the face can be validated headlessly (printed as
-//! ASCII, property-tested), and the egui app and a future hardware display can both
-//! draw from the very same pixels.
+//! [`Bitmap`] — two eyes and a mouth, nothing else. No GUI, so the look of the face can
+//! be validated headlessly (printed as ASCII, property-tested), and the egui app and a
+//! future hardware display can both draw from the very same pixels.
 
 use crate::Face;
 
@@ -62,9 +62,6 @@ pub fn rasterize(face: &Face, size: usize) -> Bitmap {
     draw_eye(&mut bmp, 0.34, &face.left_eye);
     draw_eye(&mut bmp, 0.66, &face.right_eye);
 
-    // Nose: a small dot.
-    fill_ellipse(&mut bmp, 0.5, 0.55, 0.022, 0.03);
-
     // Mouth.
     draw_mouth(&mut bmp, &face.mouth);
 
@@ -86,13 +83,13 @@ fn draw_eye(bmp: &mut Bitmap, center_x: f64, eye: &crate::Eye) {
 }
 
 const MOUTH_CENTER_X: f64 = 0.5;
-const MOUTH_BASE_Y: f64 = 0.66;
+const MOUTH_BASE_Y: f64 = 0.62;
 const MOUTH_HALF_WIDTH: f64 = 0.22;
-const MOUTH_AMPLITUDE: f64 = 0.14;
+const MOUTH_AMPLITUDE: f64 = 0.08;
 
 fn draw_mouth(bmp: &mut Bitmap, mouth: &crate::Mouth) {
     let size = bmp.size as f64;
-    let half_thickness = 0.02 + mouth.openness * 0.05;
+    let half_thickness = 0.011 + mouth.openness * 0.035;
     let x_start = ((MOUTH_CENTER_X - MOUTH_HALF_WIDTH) * size)
         .floor()
         .max(0.0) as usize;

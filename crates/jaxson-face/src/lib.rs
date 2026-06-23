@@ -1,6 +1,6 @@
 //! # jaxson-face
 //!
-//! The *geometry* of Jaxson's deliberately minimal face — two eyes, a nose, a mouth —
+//! The *geometry* of Jaxson's deliberately minimal face — two eyes and a mouth —
 //! as a pure function of [`mood`](jaxson_core::MoodVector) and time. No rendering: a
 //! UI shell (the egui app, F1.8b) draws the [`Face`] this produces, and a future
 //! hardware bot can drive servos from the same numbers.
