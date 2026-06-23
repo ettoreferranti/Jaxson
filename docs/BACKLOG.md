@@ -45,7 +45,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] **F1.5** State machine (extend `jaxson-core`): per-topic affinity + richer
   transitions with clamped functions (heavy unit + mutation tests).
 - [ ] **F1.6** `jaxson-affect` engine v1: state + sentiment → `MoodVector`.
-- [ ] **F1.7** `jaxson-agent` orchestration loop wiring the above.
+- [x] **F1.7** `jaxson-agent` orchestration loop: per-turn retrieve → prompt (persona +
+  state-gated hints + memories + history) → reply → extract+embed into graph → advance
+  state. `Embedder` seam with deterministic `HashEmbedder`; mock-driven end-to-end demo.
+  (Mood currently from `RelationshipState`; richer affect is F1.6.)
 - [ ] **F1.8** `jaxson-app` egui shell + face view (animated eyes/nose/mouth from
   mood) + idle micro-motions (blink, gaze drift).
 - [ ] **F1.9** Chat view text I/O.

@@ -33,20 +33,7 @@ impl TextGenerator for MockGenerator {
         config: &GenerationConfig,
         on_token: &mut dyn FnMut(&str),
     ) -> Result<String, LlmError> {
-        let limit = config.max_tokens.max(1);
-        let mut out = String::new();
-        for (i, word) in self.reply.split_whitespace().take(limit).enumerate() {
-            // Re-introduce the spaces that `split_whitespace` removed, so the streamed
-            // pieces concatenate back into readable text.
-            let piece = if i == 0 {
-                word.to_string()
-            } else {
-                format!(" {word}")
-            };
-            on_token(&piece);
-            out.push_str(&piece);
-        }
-        Ok(out)
+        Ok(super::stream_words(&self.reply, config, on_token))
     }
 }
 
