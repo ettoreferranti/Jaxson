@@ -19,7 +19,7 @@ structure must update this file in the same PR.
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  Presentation shell  (egui, macOS)                                 │
-│  • FaceView (eyes/nose/mouth, egui Painter 2D)                     │
+│  • FaceView (eyes + mouth, egui Painter 2D)                        │
 │  • ChatView (text I/O)                                             │
 │  • MemoryInspectorView                                             │
 │  • (v0.2) Voice I/O surface, Parental-control UI                   │

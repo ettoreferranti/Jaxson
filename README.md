@@ -2,7 +2,7 @@
 
 A privacy-first **virtual companion** that runs entirely on your Mac. Jaxson talks
 with you, learns about you by asking and observing, and expresses itself through a
-deliberately simple animated face — two eyes, a nose, and a mouth — inspired by the
+deliberately simple animated face — two eyes and a mouth — inspired by the
 B-bot from the film *Ron's Gone Wrong*.
 
 Unlike the film's B-bots, which are pre-loaded with scraped personal data, **Jaxson

@@ -1,7 +1,7 @@
 //! A tiny pure software rasterizer: turn a [`Face`] into a square black-and-white
-//! [`Bitmap`]. No GUI — so the look of the face can be validated headlessly (printed as
-//! ASCII, property-tested), and the egui app and a future hardware display can both
-//! draw from the very same pixels.
+//! [`Bitmap`] — two eyes and a mouth, nothing else. No GUI, so the look of the face can
+//! be validated headlessly (printed as ASCII, property-tested), and the egui app and a
+//! future hardware display can both draw from the very same pixels.
 
 use crate::Face;
 
@@ -59,11 +59,8 @@ pub fn rasterize(face: &Face, size: usize) -> Bitmap {
     let mut bmp = Bitmap::new(size);
 
     // Eyes (mirrored around the vertical centerline).
-    draw_eye(&mut bmp, 0.34, &face.left_eye);
-    draw_eye(&mut bmp, 0.66, &face.right_eye);
-
-    // Nose: a small dot.
-    fill_ellipse(&mut bmp, 0.5, 0.55, 0.022, 0.03);
+    draw_eye(&mut bmp, 0.36, &face.left_eye);
+    draw_eye(&mut bmp, 0.64, &face.right_eye);
 
     // Mouth.
     draw_mouth(&mut bmp, &face.mouth);
@@ -71,28 +68,33 @@ pub fn rasterize(face: &Face, size: usize) -> Bitmap {
     bmp
 }
 
-const EYE_CENTER_Y: f64 = 0.40;
-const EYE_RX: f64 = 0.12;
-const EYE_RY: f64 = 0.12;
-const GAZE_SHIFT: f64 = 0.05;
+const EYE_CENTER_Y: f64 = 0.42;
+const EYE_HALF_W: f64 = 0.05;
+const EYE_HALF_H: f64 = 0.09;
+const GAZE_SHIFT: f64 = 0.04;
 
 fn draw_eye(bmp: &mut Bitmap, center_x: f64, eye: &crate::Eye) {
-    // Gaze drifts the whole eye a little; blinking squashes it vertically. A minimum
-    // height keeps a closed eye as a visible line rather than vanishing.
+    // Ron's eyes are tall rounded rectangles (vertical capsules). Gaze drifts the whole
+    // eye a little; blinking shrinks its height — a tall eye stays a capsule, a nearly
+    // shut one collapses to a flat line (drawn as an ellipse).
     let cx = center_x + eye.pupil_dx * GAZE_SHIFT;
     let cy = EYE_CENTER_Y + eye.pupil_dy * GAZE_SHIFT;
-    let ry = EYE_RY * eye.openness.max(0.06);
-    fill_ellipse(bmp, cx, cy, EYE_RX, ry);
+    let half_h = (EYE_HALF_H * eye.openness).max(EYE_HALF_W * 0.15);
+    if half_h > EYE_HALF_W {
+        fill_capsule_v(bmp, cx, cy, EYE_HALF_W, half_h);
+    } else {
+        fill_ellipse(bmp, cx, cy, EYE_HALF_W, half_h);
+    }
 }
 
 const MOUTH_CENTER_X: f64 = 0.5;
-const MOUTH_BASE_Y: f64 = 0.66;
-const MOUTH_HALF_WIDTH: f64 = 0.22;
-const MOUTH_AMPLITUDE: f64 = 0.14;
+const MOUTH_BASE_Y: f64 = 0.60;
+const MOUTH_HALF_WIDTH: f64 = 0.11;
+const MOUTH_AMPLITUDE: f64 = 0.06;
 
 fn draw_mouth(bmp: &mut Bitmap, mouth: &crate::Mouth) {
     let size = bmp.size as f64;
-    let half_thickness = 0.02 + mouth.openness * 0.05;
+    let half_thickness = 0.009 + mouth.openness * 0.03;
     let x_start = ((MOUTH_CENTER_X - MOUTH_HALF_WIDTH) * size)
         .floor()
         .max(0.0) as usize;
@@ -110,6 +112,36 @@ fn draw_mouth(bmp: &mut Bitmap, mouth: &crate::Mouth) {
         let y1 = ((((yn + half_thickness) * size).ceil()) as usize).min(bmp.size - 1);
         for py in y0..=y1 {
             bmp.set(px, py);
+        }
+    }
+}
+
+/// Fill a vertical capsule (a "stadium": a rectangle capped by semicircles top and
+/// bottom) centered at normalized `(cxn, cyn)`, half-width `hwn`, half-height `hhn`.
+/// Expects `hhn >= hwn`.
+fn fill_capsule_v(bmp: &mut Bitmap, cxn: f64, cyn: f64, hwn: f64, hhn: f64) {
+    let size = bmp.size as f64;
+    let cx = cxn * size;
+    let cy = cyn * size;
+    let hw = (hwn * size).max(0.5);
+    let hh = (hhn * size).max(hw);
+    let cap_offset = hh - hw; // distance from center to each semicircle's center
+
+    let x0 = ((cx - hw).floor()).max(0.0) as usize;
+    let x1 = (((cx + hw).ceil()) as usize).min(bmp.size - 1);
+    let y0 = ((cy - hh).floor()).max(0.0) as usize;
+    let y1 = (((cy + hh).ceil()) as usize).min(bmp.size - 1);
+
+    for py in y0..=y1 {
+        for px in x0..=x1 {
+            let dx = px as f64 + 0.5 - cx;
+            let dy = py as f64 + 0.5 - cy;
+            let in_rect = dx.abs() <= hw && dy.abs() <= cap_offset;
+            let in_top = dx * dx + (dy + cap_offset) * (dy + cap_offset) <= hw * hw;
+            let in_bottom = dx * dx + (dy - cap_offset) * (dy - cap_offset) <= hw * hw;
+            if in_rect || in_top || in_bottom {
+                bmp.set(px, py);
+            }
         }
     }
 }
@@ -220,7 +252,8 @@ mod tests {
         let bmp = rasterize(&f, 80);
         let lowest = |x: usize| (0..bmp.size()).filter(|&y| bmp.get(x, y)).max();
         let center = lowest(bmp.size() / 2).unwrap();
-        let corner = lowest((0.33 * bmp.size() as f64) as usize).unwrap();
+        // Sample near the mouth's corner (within its narrower width).
+        let corner = lowest((0.44 * bmp.size() as f64) as usize).unwrap();
         assert!(center > corner);
     }
 
