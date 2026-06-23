@@ -1,5 +1,7 @@
 # Rust / Cargo
 /target/
+# The excluded app crate builds its own target dir (it's outside the workspace).
+crates/jaxson-app/target/
 **/*.rs.bk
 # cargo-mutants working output
 /mutants.out/
