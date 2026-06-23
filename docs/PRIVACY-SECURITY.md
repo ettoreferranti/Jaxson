@@ -21,8 +21,9 @@ first-class product requirements, not afterthoughts.
 
 ## 2. Security model
 
-- **Encryption at rest.** The memory/state store is encrypted on disk (SQLCipher or
-  app-level encryption; final choice at v0.1). Keys live in the macOS Keychain.
+- **Encryption at rest.** The memory/state store is encrypted on disk with
+  **SQLCipher** (`jaxson-memory`'s `sqlite` feature; chosen at v0.1 — see ADR A7).
+  Opening with the wrong key fails. Keys live in the macOS Keychain.
 - **Sandboxing.** The app runs sandboxed with least-privilege file access — only its
   own container and explicitly chosen model files.
 - **Untrusted model output.** LLM output is never executed/evaluated and is sanitized

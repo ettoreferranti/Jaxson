@@ -1,0 +1,24 @@
+[package]
+name = "jaxson-memory"
+description = "Jaxson's memory graph: typed/weighted nodes and edges, a store trait, and an encrypted SQLite (SQLCipher) backend."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Encrypted-at-rest SQLite persistence via SQLCipher. Builds a vendored SQLCipher +
+# OpenSSL (C toolchain required); fully testable. Off by default to keep the pure
+# graph layer light. See docs/DEVELOPMENT.md.
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+rusqlite = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = { workspace = true }
