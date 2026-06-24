@@ -433,16 +433,18 @@ mod tests {
     }
 
     #[test]
-    fn extraction_with_a_bad_relation_index_is_non_fatal() {
-        // Valid JSON, but the relation points past the memory list — into_graph errors,
-        // and the turn still succeeds with nothing learned (no partial graph).
+    fn a_bad_relation_index_is_dropped_but_the_memory_is_kept() {
+        // Valid JSON whose relation points past the memory list. The parser leniently
+        // drops the dangling relation while keeping the good memory, so the turn still
+        // learns it (rather than throwing the whole extraction away).
         let json = r#"{"memories":[{"kind":"fact","content":"x","confidence":0.9}],"relations":[{"from":0,"to":9,"relation":"knows","weight":0.5}]}"#;
         let mut model = ScriptedGenerator::new(["a reply", json]);
         let embedder = HashEmbedder::default();
         let mut agent = Agent::new("persona");
         let turn = agent.respond(&mut model, &embedder, 0, "hello").unwrap();
-        assert_eq!(turn.learned, 0);
-        assert!(agent.graph().is_empty());
+        assert_eq!(turn.learned, 1);
+        assert_eq!(agent.graph().node_count(), 1);
+        assert_eq!(agent.graph().edge_count(), 0); // the dangling relation was dropped
     }
 
     #[test]
