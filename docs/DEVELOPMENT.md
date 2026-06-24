@@ -59,8 +59,10 @@ in those crates.
 To run on the **real local model** (instead of the mock demo brain), build with
 `--features llama` and point `JAXSON_MODEL` at a GGUF; `JAXSON_TEMPLATE` (chatml/llama3/
 plain) picks the chat format. See the README's "Use the real local model" section.
-Validate a model in isolation first with the headless `jaxson-llm` example:
-`cargo run -p jaxson-llm --example llama_chat --features llama -- <model.gguf>`.
+Validate a model in isolation first with the headless `jaxson-llm` examples:
+`cargo run -p jaxson-llm --example llama_chat --features llama -- <model.gguf>` (chat), and
+`cargo run -p jaxson-llm --example embed_probe --features llama -- <model-name>` (embeddings
+— prints the vector dimension and confirms related sentences score higher than unrelated).
 
 If Jaxson chats but **learns no memories**, debug the extraction pass directly with the
 `extract_probe` example — it runs the real model through the exact extraction prompt and

@@ -55,7 +55,7 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-core` | Shared value types: `MoodVector`, `Emotion`, `RelationshipState`, IDs, errors | ✅ | **seeded** |
 | `jaxson-memory` | Memory graph (typed/weighted nodes + edges), hybrid retrieval (cosine + graph spread), `MemoryStore` trait + in-memory store; encrypted SQLite (SQLCipher) persistence behind the `sqlite` feature | ✅ (pure) / SQLCipher (feature) | **built (F1.2, F1.4)** |
 | `jaxson-affect` | Affect engine: relationship state + (lexicon) sentiment → target `MoodVector`; smoothing via the state machine | ✅ | **built (F1.6)** |
-| `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1)** |
+| `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend (`LlamaGenerator` + `LlamaEmbedder`, sharing one loaded model) behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1, F1.4b)** |
 | `jaxson-extract` | Turn conversation turns into memory nodes/edges: extraction prompt + JSON parsing, over `dyn TextGenerator` | ✅ | **built (F1.3)** |
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
 | `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
@@ -118,7 +118,11 @@ then relevance **spreads along weighted edges** (max-product relaxation, `graph_
 per hop up to `max_hops`) so associated memories — even ones without embeddings —
 surface too. Results are ranked by score (ties broken by id for determinism) and
 capped at `top_k`, then injected into the LLM prompt. The query embedding is an input;
-turning text into an embedding is a later concern that needs the model.
+turning text into one is the **embedder's** job (F1.4b): `HashEmbedder` (deterministic
+stand-in) by default, or the model's real semantic embeddings (`jaxson-llm`'s
+`LlamaEmbedder`, mean-pooled + L2-normalized) once a model is loaded. cosine tolerates
+empty/mismatched vectors (returns 0), so switching embedders degrades gracefully rather
+than crashing.
 
 ## 5. Affect engine (`jaxson-affect`, F1.6)
 

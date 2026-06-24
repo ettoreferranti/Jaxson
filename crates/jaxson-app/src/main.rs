@@ -57,36 +57,64 @@ fn select_template() -> ChatTemplate {
     }
 }
 
+/// A text generator paired with the embedder Jaxson should use for memory. The demo
+/// brain pairs with the deterministic [`HashEmbedder`]; a real model pairs with its own
+/// semantic embeddings (F1.4b).
+type Brain = (Box<dyn TextGenerator>, Box<dyn Embedder>);
+
 /// The initial brain: the real model from `$JAXSON_MODEL` when built with `--features
-/// llama`, otherwise the demo brain. Returns the model and a short status label.
-fn make_model() -> (Box<dyn TextGenerator>, String) {
+/// llama`, otherwise the demo brain. Returns the brain and a short status label.
+fn make_brain() -> (Brain, String) {
     #[cfg(feature = "llama")]
     {
         if let Ok(path) = std::env::var("JAXSON_MODEL") {
             match load_llama(std::path::Path::new(&path)) {
-                Ok(model) => return (model, format!("model: {path}")),
+                Ok(brain) => return (brain, format!("model: {path}")),
                 Err(e) => eprintln!("Failed to load JAXSON_MODEL ({path}): {e}"),
             }
         }
     }
-    (Box::new(DemoModel), "demo brain".to_string())
+    (
+        (Box::new(DemoModel), Box::new(HashEmbedder::default())),
+        "demo brain".to_string(),
+    )
 }
 
-/// Load a GGUF into a boxed generator (only with the `llama` feature).
+/// Load a GGUF into a generator + a semantic embedder sharing its weights (one copy in
+/// memory). Only with the `llama` feature.
 #[cfg(feature = "llama")]
-fn load_llama(path: &std::path::Path) -> Result<Box<dyn TextGenerator>, LlmError> {
-    use jaxson_llm::backends::{LlamaConfig, LlamaGenerator};
-    let model = LlamaGenerator::load(&LlamaConfig {
+fn load_llama(path: &std::path::Path) -> Result<Brain, LlmError> {
+    use jaxson_llm::backends::{load_generator_and_embedder, LlamaConfig};
+    let (generator, embedder) = load_generator_and_embedder(&LlamaConfig {
         model_path: path.to_path_buf(),
         ..Default::default()
     })?;
-    Ok(Box::new(model))
+    Ok((Box::new(generator), Box::new(LlamaEmbed(embedder))))
+}
+
+/// Adapts the fallible llama embedder to the agent's infallible [`Embedder`] seam: an
+/// embedding error degrades to an empty vector (retrieval just finds no match) rather
+/// than failing the turn.
+#[cfg(feature = "llama")]
+struct LlamaEmbed(jaxson_llm::backends::LlamaEmbedder);
+
+#[cfg(feature = "llama")]
+impl Embedder for LlamaEmbed {
+    fn embed(&self, text: &str) -> Vec<f32> {
+        match self.0.embed(text) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(error = %e, "embedding failed; using empty vector");
+                Vec::new()
+            }
+        }
+    }
 }
 
 struct JaxsonApp {
     agent: Agent,
     model: Box<dyn TextGenerator>,
-    embedder: HashEmbedder,
+    embedder: Box<dyn Embedder>,
     models: Vec<OllamaModel>,
     selected: Option<usize>,
     status: String,
@@ -111,7 +139,7 @@ impl JaxsonApp {
         let face_tex =
             cc.egui_ctx
                 .load_texture("jaxson-face", neutral, egui::TextureOptions::NEAREST);
-        let (model, status) = make_model();
+        let ((model, embedder), status) = make_brain();
         let template = select_template();
         // Load any previously persisted memory before the agent starts the session.
         let mut persist = persist::Persistence::open();
@@ -131,7 +159,7 @@ impl JaxsonApp {
                 ..Default::default()
             }),
             model,
-            embedder: HashEmbedder::default(),
+            embedder,
             models: ollama::discover(),
             selected: None,
             status,
@@ -251,8 +279,12 @@ impl JaxsonApp {
         #[cfg(feature = "llama")]
         {
             match load_llama(&path) {
-                Ok(model) => {
+                Ok((model, embedder)) => {
                     self.model = model;
+                    // Switch to the model's own semantic embeddings (F1.4b). Memories
+                    // stored under the previous embedder won't match this one's space,
+                    // but cosine handles that gracefully (no match, no crash).
+                    self.embedder = embedder;
                     // Match the chat format to the model so it doesn't emit garbled
                     // control tokens (e.g. llama3.1 needs the Llama-3 template).
                     self.agent.set_template(ChatTemplate::for_model_name(&name));
@@ -282,9 +314,9 @@ impl JaxsonApp {
         self.transcript.push(("You", input.clone()));
         self.turn += 1;
         let started = Instant::now();
-        let result = self
-            .agent
-            .respond(self.model.as_mut(), &self.embedder, self.turn, &input);
+        let result =
+            self.agent
+                .respond(self.model.as_mut(), self.embedder.as_ref(), self.turn, &input);
         let elapsed_ms = started.elapsed().as_millis();
         match result {
             Ok(turn) => {

@@ -44,8 +44,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **F1.4** Hybrid retrieval (`jaxson-memory::retrieve`): cosine-similarity seeds +
   weighted graph spread (decay per hop), ranked top-k. Query embedding is an input;
   text→embedding wiring deferred to model integration.
-- [ ] **F1.4b** Embedder: produce embedding vectors from text via the local model
-  (`llama.cpp` embeddings), to populate node embeddings and embed queries for F1.4.
+- [x] **F1.4b** Embedder: real semantic embeddings from the local model — `LlamaEmbedder`
+  (mean-pooled, L2-normalized `llama.cpp` embeddings) sharing the chat model's weights via
+  a shared backend + `Arc<LlamaModel>` (loaded once). Adapted to the agent's `Embedder`
+  seam in the app, replacing `HashEmbedder` when a model is loaded; embedding errors
+  degrade to an empty vector. `embed_probe` example verifies related text scores higher
+  than unrelated. Populates node embeddings + query embeddings for F1.4 retrieval.
 - [ ] **F1.5** State machine (extend `jaxson-core`): per-topic affinity + richer
   transitions with clamped functions (heavy unit + mutation tests).
 - [x] **F1.6** `jaxson-affect` engine v1: relationship state + lexicon sentiment →
