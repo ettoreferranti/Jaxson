@@ -218,15 +218,19 @@ impl Agent {
                 Ok(graph) => graph,
                 Err(_) => return Ok(0),
             };
-        let learned = nodes.len();
+        let mut learned = 0;
         for node in nodes {
+            // Don't store a memory we already have (dedup by content).
+            if self.graph.contains_content(&node.content) {
+                continue;
+            }
             let embedding = embedder.embed(&node.content);
             self.graph.insert_node(node.with_embedding(embedding));
+            learned += 1;
         }
         for edge in edges {
-            self.graph
-                .insert_edge(edge)
-                .map_err(|e| AgentError::Graph(e.to_string()))?;
+            // Ignore edges whose endpoints aren't present (e.g. a deduped node).
+            let _ = self.graph.insert_edge(edge);
         }
         Ok(learned)
     }
@@ -381,6 +385,19 @@ mod tests {
         let mut agent = Agent::new("persona");
         let turn = agent.respond(&mut model, &embedder, 0, "hi").unwrap();
         assert_eq!(turn.reply, "Hello!");
+    }
+
+    #[test]
+    fn does_not_relearn_a_duplicate_memory() {
+        let json = extraction_json("User is named Ettore");
+        let mut model = ScriptedGenerator::new(["hi", &json, "hi again", &json]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        let first = agent.respond(&mut model, &embedder, 0, "a").unwrap();
+        let second = agent.respond(&mut model, &embedder, 1, "b").unwrap();
+        assert_eq!(first.learned, 1);
+        assert_eq!(second.learned, 0); // same memory not stored again
+        assert_eq!(agent.graph().node_count(), 1);
     }
 
     #[test]
