@@ -59,9 +59,9 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-extract` | Turn conversation turns into memory nodes/edges: extraction prompt + JSON parsing, over `dyn TextGenerator` | ✅ | **built (F1.3)** |
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
 | `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
-| `jaxson-agent` | Orchestration: the per-turn conversation loop (retrieve → prompt → reply → extract → state), with an `Embedder` seam (`HashEmbedder` stand-in) and familiarity-gated proactive curiosity | ✅ | **built (F1.7, F1.11)** |
+| `jaxson-agent` | Orchestration: the per-turn conversation loop (retrieve → prompt → reply → extract → state), with an `Embedder` seam (`HashEmbedder` stand-in), familiarity-gated proactive curiosity, and structured `tracing` instrumentation | ✅ | **built (F1.7, F1.11, F1.12)** |
 | `jaxson-face` | Pure face geometry (`mood` + time → eye/mouth shapes, blink, gaze) **+ a software rasterizer** to a B/W `Bitmap` — no GUI | ✅ | **built (F1.8a)** |
-| `jaxson-app` | egui shell: displays the `jaxson-face` `Bitmap` (animated) + a chat box, wired to the agent; memory inspector; Keychain-keyed encrypted persistence behind its own `sqlite` feature. Excluded from the workspace (native GUI; run on macOS) | ❌ | **built (F1.8b, F1.10, F1.13)** |
+| `jaxson-app` | egui shell: displays the `jaxson-face` `Bitmap` (animated) + a chat box, wired to the agent; memory inspector; Keychain-keyed encrypted persistence behind its own `sqlite` feature; installs the `tracing` log sink (stderr + rolling file). Excluded from the workspace (native GUI; run on macOS) | ❌ | **built (F1.8b, F1.10, F1.12, F1.13)** |
 
 Native/heavy deps are always isolated behind cargo features: `jaxson-llm`'s `llama`
 (`llama.cpp` + Metal), `jaxson-memory`'s `sqlite` (SQLCipher), and `jaxson-perception`

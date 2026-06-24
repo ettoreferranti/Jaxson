@@ -72,7 +72,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   Fact) targets questions at gaps in the graph, so Jaxson asks about what it *doesn't* yet
   know and stops re-asking once answered. Three tiers — onboarding leads every turn,
   acquainted gently nudges remaining gaps, familiar-with-no-gaps just converses.
-- [ ] **F1.12** Structured local logging across the loop (NFR-4).
+- [x] **F1.12** Structured local logging across the loop (NFR-4): `tracing` events from
+  the agent (per-turn span, retrieval/learn counts, relationship-state transitions, and —
+  the key win — previously-silent extraction failures) plus the app (turn timing, model
+  loads, persistence). The app installs a stderr + daily rolling-file sink in the data dir
+  (`jaxson.log`), filtered by `JAXSON_LOG` (default `info`). Raw user text is kept out of
+  fields (privacy); logs stay on-device and are git-ignored. Agent stays 0-missed mutants.
 - [x] **F1.13** Persistence wired into the app (behind `jaxson-app`'s `sqlite` feature):
   load the graph on launch via `Agent::with_graph`, save after every turn and every
   inspector edit/delete. Encryption key generated/fetched from the macOS Keychain

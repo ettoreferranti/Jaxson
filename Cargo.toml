@@ -19,3 +19,6 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 tempfile = "3"
+# Structured, local-only logging (NFR-4). The facade is pure and a no-op without a
+# subscriber; the app installs the file/stderr sink.
+tracing = "0.1"

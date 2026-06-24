@@ -12,7 +12,8 @@
 use jaxson_memory::{Edge, MemoryGraph, MemoryNode};
 
 /// Jaxson's per-user data directory (`~/Library/Application Support/Jaxson` on macOS).
-fn data_dir() -> Option<std::path::PathBuf> {
+/// Shared with the logging sink so memory and logs sit side by side.
+pub(crate) fn data_dir() -> Option<std::path::PathBuf> {
     directories::ProjectDirs::from("com", "jaxson", "Jaxson").map(|d| d.data_dir().to_path_buf())
 }
 
@@ -32,14 +33,20 @@ impl Persistence {
         #[cfg(feature = "sqlite")]
         {
             match open_store() {
-                Ok((store, path)) => Persistence {
-                    store: Some(store),
-                    status: format!("memory: {}", path.display()),
-                },
-                Err(e) => Persistence {
-                    store: None,
-                    status: format!("memory not persisted ({e})"),
-                },
+                Ok((store, path)) => {
+                    tracing::info!(path = %path.display(), "opened encrypted memory store");
+                    Persistence {
+                        store: Some(store),
+                        status: format!("memory: {}", path.display()),
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "could not open memory store; running ephemerally");
+                    Persistence {
+                        store: None,
+                        status: format!("memory not persisted ({e})"),
+                    }
+                }
             }
         }
         #[cfg(not(feature = "sqlite"))]
@@ -75,8 +82,12 @@ impl Persistence {
         #[cfg(feature = "sqlite")]
         if let Some(store) = &mut self.store {
             use jaxson_memory::MemoryStore;
-            if let Err(e) = store.save(graph) {
-                self.status = format!("save failed: {e}");
+            match store.save(graph) {
+                Ok(()) => tracing::debug!(nodes = graph.node_count(), "saved memory"),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to save memory");
+                    self.status = format!("save failed: {e}");
+                }
             }
         }
         let _ = graph;

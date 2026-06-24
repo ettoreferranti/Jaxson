@@ -12,6 +12,7 @@ use std::time::Instant;
 use eframe::egui;
 use egui::Color32;
 
+mod logging;
 mod persist;
 
 use jaxson_agent::{Agent, AgentConfig, Embedder, HashEmbedder};
@@ -257,8 +258,12 @@ impl JaxsonApp {
                     self.agent.set_template(ChatTemplate::for_model_name(&name));
                     self.selected = Some(index);
                     self.status = format!("model: {name}");
+                    tracing::info!(model = %name, "loaded model");
                 }
-                Err(e) => self.status = format!("failed to load {name}: {e}"),
+                Err(e) => {
+                    tracing::error!(model = %name, error = %e, "failed to load model");
+                    self.status = format!("failed to load {name}: {e}");
+                }
             }
         }
         #[cfg(not(feature = "llama"))]
@@ -276,12 +281,26 @@ impl JaxsonApp {
         }
         self.transcript.push(("You", input.clone()));
         self.turn += 1;
-        match self
+        let started = Instant::now();
+        let result = self
             .agent
-            .respond(self.model.as_mut(), &self.embedder, self.turn, &input)
-        {
-            Ok(turn) => self.transcript.push(("Jaxson", turn.reply)),
-            Err(e) => self.transcript.push(("Jaxson", format!("(error: {e})"))),
+            .respond(self.model.as_mut(), &self.embedder, self.turn, &input);
+        let elapsed_ms = started.elapsed().as_millis();
+        match result {
+            Ok(turn) => {
+                tracing::info!(
+                    elapsed_ms,
+                    learned = turn.learned,
+                    retrieved = turn.retrieved,
+                    reply_chars = turn.reply.chars().count(),
+                    "reply generated"
+                );
+                self.transcript.push(("Jaxson", turn.reply));
+            }
+            Err(e) => {
+                tracing::error!(elapsed_ms, error = %e, "turn failed");
+                self.transcript.push(("Jaxson", format!("(error: {e})")));
+            }
         }
         // The turn may have learned new memories — persist the updated graph.
         self.persist.save(self.agent.graph());
@@ -406,6 +425,13 @@ fn to_image(bitmap: &Bitmap) -> egui::ColorImage {
 }
 
 fn main() -> eframe::Result<()> {
+    // Keep the guard alive for the whole run so the file writer flushes on exit.
+    let _log_guard = logging::init();
+    tracing::info!(
+        llama = cfg!(feature = "llama"),
+        sqlite = cfg!(feature = "sqlite"),
+        "Jaxson starting"
+    );
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([360.0, 560.0])
