@@ -136,11 +136,23 @@ fn strip_code_fences(s: &str) -> &str {
     }
 }
 
+/// The outermost `{ … }` object in `s` (first `{` to last `}`), tolerating prose a model
+/// wraps around its JSON (e.g. "Here is the JSON: { … }.").
+fn extract_json_object(s: &str) -> Option<&str> {
+    let start = s.find('{')?;
+    let end = s.rfind('}')?;
+    let candidate = s.get(start..=end)?;
+    // Reject a stray `}` before `{` (which yields an empty slice).
+    candidate.starts_with('{').then_some(candidate)
+}
+
 /// Parse the model's raw response into an [`Extraction`].
 pub fn parse_extraction(raw: &str) -> Result<Extraction, ExtractError> {
-    // Drop reasoning + chat-control tokens, then any Markdown code fence, then parse.
+    // Drop reasoning + chat-control tokens, then any code fence, then isolate the JSON
+    // object (models often wrap it in prose).
     let cleaned = jaxson_llm::clean_output(raw);
-    let json = strip_code_fences(&cleaned);
+    let fenced = strip_code_fences(&cleaned);
+    let json = extract_json_object(fenced).unwrap_or(fenced).trim();
     if json.is_empty() {
         return Err(ExtractError::EmptyResponse);
     }
@@ -246,6 +258,28 @@ mod tests {
         let raw = "```json\n{\"memories\":[{\"kind\":\"fact\",\"content\":\"x\"}]}\n```";
         let ex = parse_extraction(raw).unwrap();
         assert_eq!(ex.memories.len(), 1);
+    }
+
+    #[test]
+    fn strip_code_fences_drops_the_language_tag() {
+        assert_eq!(strip_code_fences("```json\n{\"a\":1}\n```"), "{\"a\":1}");
+        assert_eq!(strip_code_fences("```\n{\"a\":1}\n```"), "{\"a\":1}");
+        assert_eq!(strip_code_fences("{\"a\":1}"), "{\"a\":1}");
+    }
+
+    #[test]
+    fn extract_json_object_handles_braces_out_of_order() {
+        assert_eq!(extract_json_object("a{\"x\":1}b"), Some("{\"x\":1}"));
+        assert_eq!(extract_json_object("no braces"), None);
+        assert_eq!(extract_json_object("}{"), None); // stray close before open
+    }
+
+    #[test]
+    fn parses_json_wrapped_in_prose() {
+        let raw = "Sure! Here is the JSON:\n{\"memories\":[{\"kind\":\"preference\",\"content\":\"likes hiking\"}]}\nLet me know if you need more.";
+        let ex = parse_extraction(raw).unwrap();
+        assert_eq!(ex.memories.len(), 1);
+        assert_eq!(ex.memories[0].content, "likes hiking");
     }
 
     #[test]

@@ -237,6 +237,9 @@ impl JaxsonApp {
             match load_llama(&path) {
                 Ok(model) => {
                     self.model = model;
+                    // Match the chat format to the model so it doesn't emit garbled
+                    // control tokens (e.g. llama3.1 needs the Llama-3 template).
+                    self.agent.set_template(ChatTemplate::for_model_name(&name));
                     self.selected = Some(index);
                     self.status = format!("model: {name}");
                 }
