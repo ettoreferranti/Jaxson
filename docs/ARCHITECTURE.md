@@ -61,7 +61,7 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
 | `jaxson-agent` | Orchestration: the per-turn conversation loop (retrieve → prompt → reply → extract → state), with an `Embedder` seam (`HashEmbedder` stand-in) | ✅ | **built (F1.7)** |
 | `jaxson-face` | Pure face geometry (`mood` + time → eye/mouth shapes, blink, gaze) **+ a software rasterizer** to a B/W `Bitmap` — no GUI | ✅ | **built (F1.8a)** |
-| `jaxson-app` | egui shell: displays the `jaxson-face` `Bitmap` (animated) + a chat box, wired to the agent. Excluded from the workspace (native GUI; run on macOS) | ❌ | **built (F1.8b)** |
+| `jaxson-app` | egui shell: displays the `jaxson-face` `Bitmap` (animated) + a chat box, wired to the agent; memory inspector; Keychain-keyed encrypted persistence behind its own `sqlite` feature. Excluded from the workspace (native GUI; run on macOS) | ❌ | **built (F1.8b, F1.10, F1.13)** |
 
 Native/heavy deps are always isolated behind cargo features: `jaxson-llm`'s `llama`
 (`llama.cpp` + Metal), `jaxson-memory`'s `sqlite` (SQLCipher), and `jaxson-perception`
@@ -154,10 +154,15 @@ user input
 
 ## 7. Persistence
 
-- SQLite file in the app's sandbox container, **encrypted at rest via SQLCipher**
-  (decided at v0.1; `jaxson-memory`'s `sqlite` feature, `rusqlite` + vendored
-  SQLCipher). The key comes from the macOS Keychain; opening with the wrong key
-  fails. Holds nodes, edges, and (later) state and history.
+- SQLite file in the app's data dir (`~/Library/Application Support/Jaxson` on
+  macOS), **encrypted at rest via SQLCipher** (decided at v0.1; `jaxson-memory`'s
+  `sqlite` feature, `rusqlite` + vendored SQLCipher). The key comes from the macOS
+  Keychain (generated on first run via the `keyring` crate, fetched thereafter);
+  opening with the wrong key fails. Holds nodes, edges, and (later) state and history.
+- **Wired into the app** behind `jaxson-app`'s own `sqlite` feature: the graph loads
+  on launch and saves after every turn and every memory-inspector edit/delete. A
+  "Export JSON" button dumps the (otherwise encrypted) graph to a readable file in the
+  same dir. Without the feature the app runs ephemerally (memory lost on quit).
 - Vector index alongside (start simple: in-memory + persisted vectors; revisit a
   dedicated index if scale requires).
 - No memory data is ever written outside the user's container; never committed to

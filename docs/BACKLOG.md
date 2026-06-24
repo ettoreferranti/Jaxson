@@ -69,6 +69,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   tested); `Agent::graph_mut` for curation; egui inspector in the app.
 - [ ] **F1.11** Proactive question-asking behavior gated by `familiarity`.
 - [ ] **F1.12** Structured local logging across the loop (NFR-4).
+- [x] **F1.13** Persistence wired into the app (behind `jaxson-app`'s `sqlite` feature):
+  load the graph on launch via `Agent::with_graph`, save after every turn and every
+  inspector edit/delete. Encryption key generated/fetched from the macOS Keychain
+  (`keyring`); DB lives in the app data dir. "Export JSON" button for a readable dump of
+  the encrypted graph. Degrades to an ephemeral session (never fatal) if persistence is
+  off or the Keychain is unavailable.
 
 ## Milestone v0.2 — Voice + safety
 

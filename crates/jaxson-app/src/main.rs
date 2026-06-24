@@ -12,6 +12,8 @@ use std::time::Instant;
 use eframe::egui;
 use egui::Color32;
 
+mod persist;
+
 use jaxson_agent::{Agent, AgentConfig, Embedder, HashEmbedder};
 use jaxson_core::MoodVector;
 use jaxson_face::{face, rasterize, Bitmap};
@@ -92,6 +94,9 @@ struct JaxsonApp {
     start: Instant,
     turn: i64,
     face_tex: egui::TextureHandle,
+    // Encrypted on-disk memory (Keychain-keyed); ephemeral without `--features sqlite`.
+    persist: persist::Persistence,
+    export_status: String,
     // Memory inspector state.
     show_memories: bool,
     mem_search: String,
@@ -107,8 +112,11 @@ impl JaxsonApp {
                 .load_texture("jaxson-face", neutral, egui::TextureOptions::NEAREST);
         let (model, status) = make_model();
         let template = select_template();
+        // Load any previously persisted memory before the agent starts the session.
+        let mut persist = persist::Persistence::open();
+        let graph = persist.load();
         JaxsonApp {
-            agent: Agent::new(PERSONA).with_config(AgentConfig {
+            agent: Agent::with_graph(PERSONA, graph).with_config(AgentConfig {
                 template,
                 // Stop generation at the template's end-of-turn token.
                 gen_config: GenerationConfig {
@@ -131,6 +139,8 @@ impl JaxsonApp {
             start: Instant::now(),
             turn: 0,
             face_tex,
+            persist,
+            export_status: String::new(),
             show_memories: false,
             mem_search: String::new(),
             editing: None,
@@ -204,6 +214,7 @@ impl JaxsonApp {
             self.show_memories = false;
         }
 
+        let changed = to_delete.is_some() || to_save.is_some();
         if let Some(id) = to_delete {
             self.agent.graph_mut().remove_node(id);
             if self.editing == Some(id) {
@@ -225,6 +236,10 @@ impl JaxsonApp {
                 self.agent.graph_mut().insert_node(updated);
             }
             self.editing = None;
+        }
+        // Curation edits change what Jaxson knows — persist them immediately.
+        if changed {
+            self.persist.save(self.agent.graph());
         }
     }
 
@@ -268,6 +283,8 @@ impl JaxsonApp {
             Ok(turn) => self.transcript.push(("Jaxson", turn.reply)),
             Err(e) => self.transcript.push(("Jaxson", format!("(error: {e})"))),
         }
+        // The turn may have learned new memories — persist the updated graph.
+        self.persist.save(self.agent.graph());
     }
 }
 
@@ -343,9 +360,22 @@ impl eframe::App for JaxsonApp {
                 }
             });
 
-            let label = format!("🧠 Memories ({})", self.agent.graph().node_count());
-            if ui.button(label).clicked() {
-                self.show_memories = !self.show_memories;
+            ui.horizontal(|ui| {
+                let label = format!("🧠 Memories ({})", self.agent.graph().node_count());
+                if ui.button(label).clicked() {
+                    self.show_memories = !self.show_memories;
+                }
+                // Debug dump: the DB is encrypted, so this is the readable view.
+                if ui.button("⬇ Export JSON").clicked() {
+                    self.export_status = match persist::export_json(self.agent.graph()) {
+                        Ok(path) => format!("exported to {}", path.display()),
+                        Err(e) => format!("export failed: {e}"),
+                    };
+                }
+            });
+            ui.small(self.persist.status());
+            if !self.export_status.is_empty() {
+                ui.small(self.export_status.as_str());
             }
         });
 

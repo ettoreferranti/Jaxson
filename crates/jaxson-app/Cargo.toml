@@ -14,6 +14,10 @@ default = []
 # Use the real local model (llama.cpp + Metal) instead of the demo brain. Needs cmake +
 # a GGUF model at runtime (set JAXSON_MODEL). Build: `--features llama`.
 llama = ["jaxson-llm/llama"]
+# Persist memory encrypted-at-rest (SQLCipher) with the key held in the macOS Keychain.
+# Pulls a C toolchain (vendored SQLCipher + OpenSSL); off by default so plain builds
+# stay light and ephemeral. Build: `--features sqlite`. See docs/PRIVACY-SECURITY.md.
+sqlite = ["jaxson-memory/sqlite", "dep:keyring", "dep:uuid"]
 
 [dependencies]
 eframe = "0.29"
@@ -23,3 +27,10 @@ jaxson-face = { path = "../jaxson-face" }
 jaxson-llm = { path = "../jaxson-llm" }
 jaxson-memory = { path = "../jaxson-memory" }
 jaxson-agent = { path = "../jaxson-agent" }
+directories = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# macOS Keychain access for the DB encryption key (sqlite feature only).
+keyring = { version = "3", features = ["apple-native"], optional = true }
+# Random key generation for first-run DB encryption (sqlite feature only).
+uuid = { version = "1", features = ["v4"], optional = true }
