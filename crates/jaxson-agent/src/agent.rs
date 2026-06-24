@@ -4,14 +4,9 @@ use jaxson_extract::Extractor;
 use jaxson_llm::{assemble, ChatTemplate, GenerationConfig, Message, TextGenerator};
 use jaxson_memory::{retrieve, MemoryGraph, MemoryId, RetrievalParams};
 
+use crate::curiosity;
 use crate::embedder::Embedder;
 use crate::error::AgentError;
-
-/// Appended to the persona while Jaxson barely knows the user (behavior gating driven
-/// by the relationship state machine — FR-M6).
-const ONBOARDING_HINT: &str =
-    "\n\nYou don't know this person well yet — warmly ask a question to learn \
-     something new about them.";
 
 /// Tuning for the conversation loop.
 #[derive(Debug, Clone)]
@@ -235,11 +230,13 @@ impl Agent {
         Ok(learned)
     }
 
-    /// Persona plus state-driven behavior hints.
+    /// Persona plus state-driven behavior hints. Proactive curiosity (when and what to
+    /// ask) is gated by familiarity and what's already known — see [`crate::curiosity`].
     fn system_prompt(&self) -> String {
         let mut prompt = self.persona.clone();
-        if self.state.should_prioritize_onboarding() {
-            prompt.push_str(ONBOARDING_HINT);
+        if let Some(hint) = curiosity::proactive_hint(&self.state, &self.graph) {
+            prompt.push_str("\n\n");
+            prompt.push_str(&hint);
         }
         prompt
     }
@@ -321,7 +318,8 @@ mod tests {
         let agent = Agent::new("You are Jaxson.");
         assert!(agent.graph().is_empty());
         assert_eq!(agent.state().familiarity(), 0.0);
-        assert!(agent.system_prompt().contains(ONBOARDING_HINT));
+        // A brand-new Jaxson leads with a warm getting-to-know-you question.
+        assert!(agent.system_prompt().contains("Warmly ask"));
     }
 
     #[test]
@@ -460,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn onboarding_hint_drops_once_familiar() {
+    fn onboarding_lead_gives_way_to_casual_curiosity_as_familiarity_grows() {
         let embedder = HashEmbedder::default();
         let mut replies = Vec::new();
         for i in 0..10 {
@@ -470,13 +468,18 @@ mod tests {
         let mut model = ScriptedGenerator::new(replies);
         let mut agent = Agent::new("You are Jaxson.");
 
-        assert!(agent.system_prompt().contains(ONBOARDING_HINT));
+        // Fresh: leads every turn with a warm onboarding question.
+        assert!(agent.system_prompt().contains("Warmly ask"));
         for i in 0..10 {
             agent
                 .respond(&mut model, &embedder, i, "tell me more")
                 .unwrap();
         }
+        // Now acquainted; the lead is gone. Only Fact memories were learned, so other
+        // topics remain open and Jaxson stays gently curious rather than going silent.
         assert!(agent.state().familiarity() > RelationshipState::ONBOARDING_FAMILIARITY_THRESHOLD);
-        assert!(!agent.system_prompt().contains(ONBOARDING_HINT));
+        let prompt = agent.system_prompt();
+        assert!(!prompt.contains("Warmly ask"));
+        assert!(prompt.contains("gently ask"));
     }
 }

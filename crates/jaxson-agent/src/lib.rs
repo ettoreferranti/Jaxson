@@ -31,6 +31,7 @@
 //! ```
 
 mod agent;
+mod curiosity;
 mod embedder;
 mod error;
 

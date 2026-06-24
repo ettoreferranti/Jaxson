@@ -59,7 +59,7 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-extract` | Turn conversation turns into memory nodes/edges: extraction prompt + JSON parsing, over `dyn TextGenerator` | ✅ | **built (F1.3)** |
 | `jaxson-safety` | Content filtering, topic guardrails, output sanitization | ✅ | backlog (v0.2) |
 | `jaxson-perception` | whisper.cpp STT + local TTS | ✅ | backlog (v0.2) |
-| `jaxson-agent` | Orchestration: the per-turn conversation loop (retrieve → prompt → reply → extract → state), with an `Embedder` seam (`HashEmbedder` stand-in) | ✅ | **built (F1.7)** |
+| `jaxson-agent` | Orchestration: the per-turn conversation loop (retrieve → prompt → reply → extract → state), with an `Embedder` seam (`HashEmbedder` stand-in) and familiarity-gated proactive curiosity | ✅ | **built (F1.7, F1.11)** |
 | `jaxson-face` | Pure face geometry (`mood` + time → eye/mouth shapes, blink, gaze) **+ a software rasterizer** to a B/W `Bitmap` — no GUI | ✅ | **built (F1.8a)** |
 | `jaxson-app` | egui shell: displays the `jaxson-face` `Bitmap` (animated) + a chat box, wired to the agent; memory inspector; Keychain-keyed encrypted persistence behind its own `sqlite` feature. Excluded from the workspace (native GUI; run on macOS) | ❌ | **built (F1.8b, F1.10, F1.13)** |
 
@@ -103,7 +103,12 @@ Derived, persisted scalars that summarize the relationship and gate behavior:
   a pure function of the event history, making it deterministic and testable.
 
 ### 4.3 Behavior gating (examples)
-- `familiarity` low → orchestrator biases toward asking onboarding questions.
+- `familiarity` low → orchestrator biases toward asking onboarding questions
+  (`jaxson-agent::curiosity`, F1.11): a getting-to-know-you curriculum (Person →
+  Preference → Event → Fact) aims questions at gaps in the graph, so Jaxson asks about
+  what it doesn't yet know and stops once a topic is answered. Three tiers: onboarding
+  leads every turn, acquainted gently nudges remaining gaps, familiar-with-no-gaps just
+  converses.
 - `trust` below a threshold → sensitive topics stay locked.
 - `affinity` per topic → influences what Jaxson brings up and the baseline mood.
 
