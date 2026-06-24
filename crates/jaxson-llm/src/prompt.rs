@@ -38,6 +38,17 @@ impl ChatTemplate {
             ChatTemplate::Plain => &[],
         }
     }
+
+    /// Best-guess chat template for a model by name (e.g. an Ollama model id). Llama
+    /// models use the Llama-3 format; others default to ChatML (Qwen, etc.). Picking the
+    /// wrong template makes models emit garbled control tokens and degrades output.
+    pub fn for_model_name(name: &str) -> ChatTemplate {
+        if name.to_lowercase().contains("llama") {
+            ChatTemplate::Llama3
+        } else {
+            ChatTemplate::ChatMl
+        }
+    }
 }
 
 fn render_chatml(messages: &[Message]) -> String {
@@ -136,6 +147,26 @@ mod tests {
         assert_eq!(ChatTemplate::ChatMl.stop_tokens(), &["<|im_end|>"]);
         assert_eq!(ChatTemplate::Llama3.stop_tokens(), &["<|eot_id|>"]);
         assert!(ChatTemplate::Plain.stop_tokens().is_empty());
+    }
+
+    #[test]
+    fn template_inferred_from_model_name() {
+        assert_eq!(
+            ChatTemplate::for_model_name("llama3.1:8b"),
+            ChatTemplate::Llama3
+        );
+        assert_eq!(
+            ChatTemplate::for_model_name("Llama-3-Instruct"),
+            ChatTemplate::Llama3
+        );
+        assert_eq!(
+            ChatTemplate::for_model_name("qwen3:latest"),
+            ChatTemplate::ChatMl
+        );
+        assert_eq!(
+            ChatTemplate::for_model_name("mistral"),
+            ChatTemplate::ChatMl
+        );
     }
 
     #[test]

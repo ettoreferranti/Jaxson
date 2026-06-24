@@ -106,6 +106,22 @@ impl Agent {
         &mut self.graph
     }
 
+    /// The chat template currently in use.
+    pub fn template(&self) -> ChatTemplate {
+        self.config.template
+    }
+
+    /// Switch the chat template (e.g. when loading a different model), keeping the stop
+    /// tokens consistent. Extraction follows the same template (synced each turn).
+    pub fn set_template(&mut self, template: ChatTemplate) {
+        self.config.template = template;
+        self.config.gen_config.stop = template
+            .stop_tokens()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+    }
+
     pub fn history(&self) -> &[Message] {
         &self.history
     }
@@ -190,6 +206,8 @@ impl Agent {
     ) -> Result<usize, AgentError> {
         // Extraction is best-effort: a model that returns malformed/empty JSON simply
         // means nothing was learned this turn, not a failed turn. (Logging this is F1.12.)
+        // Extract with the same chat template the model is using.
+        self.extractor.template = self.config.template;
         let window = self.recent_window();
         let extraction = match self.extractor.extract(model, &window) {
             Ok(extraction) => extraction,
@@ -235,6 +253,43 @@ mod tests {
     use super::*;
     use crate::embedder::HashEmbedder;
     use jaxson_llm::backends::ScriptedGenerator;
+
+    /// Records the prompts and stop tokens it's asked to generate from (returns empty).
+    #[derive(Default)]
+    struct RecordingGenerator {
+        prompts: Vec<String>,
+        stops: Vec<Vec<String>>,
+    }
+
+    impl TextGenerator for RecordingGenerator {
+        fn generate(
+            &mut self,
+            prompt: &str,
+            config: &GenerationConfig,
+            _on_token: &mut dyn FnMut(&str),
+        ) -> Result<String, jaxson_llm::LlmError> {
+            self.prompts.push(prompt.to_string());
+            self.stops.push(config.stop.clone());
+            Ok(String::new())
+        }
+    }
+
+    #[test]
+    fn set_template_drives_chat_extraction_and_stop() {
+        let mut rec = RecordingGenerator::default();
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        agent.set_template(ChatTemplate::Llama3);
+        assert_eq!(agent.template(), ChatTemplate::Llama3);
+
+        agent.respond(&mut rec, &embedder, 0, "hi").unwrap();
+
+        // prompts[0] = chat, prompts[1] = extraction; both use the Llama-3 format.
+        assert!(rec.prompts[0].starts_with("<|begin_of_text|>"));
+        assert!(rec.prompts[1].contains("<|start_header_id|>"));
+        // The chat config carries the Llama-3 stop token.
+        assert!(rec.stops[0].iter().any(|s| s == "<|eot_id|>"));
+    }
 
     fn extraction_json(content: &str) -> String {
         format!(
