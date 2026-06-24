@@ -21,4 +21,5 @@ egui = "0.29"
 jaxson-core = { path = "../jaxson-core" }
 jaxson-face = { path = "../jaxson-face" }
 jaxson-llm = { path = "../jaxson-llm" }
+jaxson-memory = { path = "../jaxson-memory" }
 jaxson-agent = { path = "../jaxson-agent" }

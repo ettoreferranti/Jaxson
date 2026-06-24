@@ -64,7 +64,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   agent — the face reacts live to the sentiment of typed input. Excluded from the
   workspace/CI (native GUI); run on macOS. Reply text is canned until a real model.
 - [ ] **F1.9** Chat view text I/O.
-- [ ] **F1.10** Memory inspector: browse / search / edit / delete memories & edges.
+- [x] **F1.10** Memory inspector: a window to browse / search / edit / delete memories
+  (deleting a node also drops its edges). `MemoryGraph::search` + `remove_edge` (pure,
+  tested); `Agent::graph_mut` for curation; egui inspector in the app.
 - [ ] **F1.11** Proactive question-asking behavior gated by `familiarity`.
 - [ ] **F1.12** Structured local logging across the loop (NFR-4).
 
