@@ -67,7 +67,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **F1.10** Memory inspector: a window to browse / search / edit / delete memories
   (deleting a node also drops its edges). `MemoryGraph::search` + `remove_edge` (pure,
   tested); `Agent::graph_mut` for curation; egui inspector in the app.
-- [ ] **F1.11** Proactive question-asking behavior gated by `familiarity`.
+- [x] **F1.11** Proactive question-asking gated by `familiarity` (`jaxson-agent::curiosity`,
+  pure + mutation-graded): a getting-to-know-you curriculum (Person → Preference → Event →
+  Fact) targets questions at gaps in the graph, so Jaxson asks about what it *doesn't* yet
+  know and stops re-asking once answered. Three tiers — onboarding leads every turn,
+  acquainted gently nudges remaining gaps, familiar-with-no-gaps just converses.
 - [ ] **F1.12** Structured local logging across the loop (NFR-4).
 - [x] **F1.13** Persistence wired into the app (behind `jaxson-app`'s `sqlite` feature):
   load the graph on launch via `Agent::with_graph`, save after every turn and every

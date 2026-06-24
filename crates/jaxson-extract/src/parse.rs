@@ -103,7 +103,10 @@ struct ResponseDto {
 
 #[derive(Deserialize)]
 struct MemoryDto {
-    kind: MemoryKind,
+    // Lenient: kept as text and validated after parsing, so one bogus kind a model
+    // invents (e.g. "relation") drops just that memory instead of failing the whole
+    // extraction.
+    kind: String,
     content: String,
     #[serde(default = "default_confidence")]
     confidence: f32,
@@ -113,7 +116,8 @@ struct MemoryDto {
 struct RelationDto {
     from: usize,
     to: usize,
-    relation: Relation,
+    // Lenient for the same reason as `MemoryDto::kind`.
+    relation: String,
     #[serde(default = "default_weight")]
     weight: f32,
 }
@@ -159,27 +163,55 @@ pub fn parse_extraction(raw: &str) -> Result<Extraction, ExtractError> {
     let dto: ResponseDto =
         serde_json::from_str(json).map_err(|e| ExtractError::Json(e.to_string()))?;
 
-    Ok(Extraction {
-        memories: dto
-            .memories
-            .into_iter()
-            .map(|m| ExtractedMemory {
-                kind: m.kind,
-                content: m.content,
-                confidence: m.confidence,
-            })
-            .collect(),
-        relations: dto
-            .relations
-            .into_iter()
-            .map(|r| ExtractedRelation {
-                from: r.from,
-                to: r.to,
-                relation: r.relation,
+    // Keep only memories with a recognized kind, recording how each original index maps
+    // to its position in the filtered list so relations can be remapped (or dropped).
+    let mut memories = Vec::with_capacity(dto.memories.len());
+    let mut remap = Vec::with_capacity(dto.memories.len());
+    for m in dto.memories {
+        match parse_kind(&m.kind) {
+            Some(kind) => {
+                remap.push(Some(memories.len()));
+                memories.push(ExtractedMemory {
+                    kind,
+                    content: m.content,
+                    confidence: m.confidence,
+                });
+            }
+            None => remap.push(None),
+        }
+    }
+
+    // A relation survives only if its type is known and both endpoints point at kept
+    // memories; its indices are rewritten to the filtered list.
+    let remapped = |i: usize| remap.get(i).copied().flatten();
+    let relations = dto
+        .relations
+        .into_iter()
+        .filter_map(|r| {
+            Some(ExtractedRelation {
+                from: remapped(r.from)?,
+                to: remapped(r.to)?,
+                relation: parse_relation(&r.relation)?,
                 weight: r.weight,
             })
-            .collect(),
+        })
+        .collect();
+
+    Ok(Extraction {
+        memories,
+        relations,
     })
+}
+
+/// Parse a memory kind from the model's wire string, tolerating surrounding whitespace
+/// and capitalization. Returns `None` for an unrecognized kind (so it's skipped).
+fn parse_kind(s: &str) -> Option<MemoryKind> {
+    MemoryKind::from_db_str(&s.trim().to_lowercase())
+}
+
+/// Parse a relation type from the model's wire string, leniently (see [`parse_kind`]).
+fn parse_relation(s: &str) -> Option<Relation> {
+    Relation::from_db_str(&s.trim().to_lowercase())
 }
 
 #[cfg(test)]
@@ -314,9 +346,64 @@ mod tests {
     }
 
     #[test]
-    fn unknown_kind_is_a_json_error() {
+    fn unknown_kind_is_skipped_not_an_error() {
+        // A model inventing a kind drops just that memory; the pass still succeeds.
         let raw = r#"{"memories":[{"kind":"banana","content":"x"}]}"#;
-        assert!(matches!(parse_extraction(raw), Err(ExtractError::Json(_))));
+        assert!(parse_extraction(raw).unwrap().is_empty());
+    }
+
+    #[test]
+    fn keeps_valid_memories_when_one_kind_is_bogus() {
+        // The real qwen3 failure: three good memories plus a stray "relation" kind. The
+        // good ones must survive instead of the whole extraction being thrown away.
+        let raw = r#"{"memories":[
+            {"kind":"person","content":"Ettore","confidence":1.0},
+            {"kind":"preference","content":"loves hiking","confidence":1.0},
+            {"kind":"relation","content":"Ettore's dog","confidence":1.0},
+            {"kind":"person","content":"Rex","confidence":1.0}
+        ]}"#;
+        let ex = parse_extraction(raw).unwrap();
+        assert_eq!(ex.memories.len(), 3);
+        assert_eq!(ex.memories[0].content, "Ettore");
+        assert_eq!(ex.memories[2].content, "Rex");
+    }
+
+    #[test]
+    fn kind_parsing_tolerates_case_and_whitespace() {
+        let raw = r#"{"memories":[{"kind":" Person ","content":"x"}]}"#;
+        let ex = parse_extraction(raw).unwrap();
+        assert_eq!(ex.memories[0].kind, MemoryKind::Person);
+    }
+
+    #[test]
+    fn relations_are_remapped_after_an_earlier_memory_is_dropped() {
+        // Memory 0 has a bad kind and is dropped, so "person" Rex shifts from index 1→0.
+        // A relation 1→1 must be rewritten to 0→0, not left dangling or misaligned.
+        let raw = r#"{"memories":[
+            {"kind":"bogus","content":"junk"},
+            {"kind":"person","content":"Rex"}
+        ],"relations":[{"from":1,"to":1,"relation":"knows","weight":0.5}]}"#;
+        let ex = parse_extraction(raw).unwrap();
+        assert_eq!(ex.memories.len(), 1);
+        assert_eq!(ex.relations.len(), 1);
+        assert_eq!(ex.relations[0].from, 0);
+        assert_eq!(ex.relations[0].to, 0);
+    }
+
+    #[test]
+    fn relation_to_a_dropped_or_unknown_target_is_discarded() {
+        // Relation references memory index 1 (dropped) and uses an unknown relation type;
+        // either reason alone drops it.
+        let raw = r#"{"memories":[
+            {"kind":"person","content":"Rex"},
+            {"kind":"bogus","content":"junk"}
+        ],"relations":[
+            {"from":0,"to":1,"relation":"knows","weight":0.5},
+            {"from":0,"to":0,"relation":"teleports","weight":0.5}
+        ]}"#;
+        let ex = parse_extraction(raw).unwrap();
+        assert_eq!(ex.memories.len(), 1);
+        assert!(ex.relations.is_empty());
     }
 
     #[test]

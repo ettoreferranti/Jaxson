@@ -62,6 +62,21 @@ plain) picks the chat format. See the README's "Use the real local model" sectio
 Validate a model in isolation first with the headless `jaxson-llm` example:
 `cargo run -p jaxson-llm --example llama_chat --features llama -- <model.gguf>`.
 
+If Jaxson chats but **learns no memories**, debug the extraction pass directly with the
+`extract_probe` example — it runs the real model through the exact extraction prompt and
+prints the raw output beside the parsed result:
+
+```bash
+cargo run -p jaxson-extract --example extract_probe --features llama -- qwen3 "Hi, I'm Ettore"
+```
+
+The first arg is an Ollama model name (resolved via discovery) or a `.gguf` path.
+Note on **reasoning models** (Qwen3, DeepSeek-R1 distills, …): left to think, they spend
+the whole token budget inside `<think>…</think>` and never emit the JSON, so nothing is
+learned. The extraction prompt ends with `/no_think` to disable that (harmless to other
+models), and parsing is lenient — an unknown `kind`/`relation` a model invents drops just
+that item instead of failing the whole extraction.
+
 ## Branching & PRs
 
 - **`main` is protected and always green.** No direct commits to `main`.

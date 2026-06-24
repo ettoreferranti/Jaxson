@@ -6,6 +6,13 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+# Enables the real llama.cpp backend for the `extract_probe` example (which loads a
+# GGUF and shows what the model emits for the extraction prompt). The crate's own logic
+# is pure and model-agnostic; this only flows through to jaxson-llm.
+llama = ["jaxson-llm/llama"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

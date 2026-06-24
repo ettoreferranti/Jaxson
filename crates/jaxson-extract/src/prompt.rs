@@ -3,13 +3,19 @@
 use jaxson_llm::Message;
 
 /// System instruction describing the extraction task and the exact JSON schema.
+///
+/// The trailing `/no_think` is a soft switch that disables step-by-step reasoning on
+/// Qwen-family "thinking" models (harmless text to other models): without it they spend
+/// the whole token budget deliberating inside `<think>…</think>` and never emit the JSON.
 pub const EXTRACTION_SYSTEM: &str = "\
 You extract durable facts about the user from a conversation, to remember later. \
 Respond with ONLY a JSON object of the form:\n\
 {\"memories\":[{\"kind\":\"fact|person|event|preference|episode\",\"content\":\"...\",\"confidence\":0.0-1.0}],\
 \"relations\":[{\"from\":<memory index>,\"to\":<memory index>,\"relation\":\"likes|dislikes|knows|related_to|happened_on|causes\",\"weight\":0.0-1.0}]}\n\
+Use only those exact `kind` and `relation` values. \
 Only include things clearly stated or strongly implied. Do not invent details. \
-If there is nothing worth remembering, return {\"memories\":[],\"relations\":[]}.";
+If there is nothing worth remembering, return {\"memories\":[],\"relations\":[]}. \
+Do not explain or show your reasoning — output only the JSON object. /no_think";
 
 /// Render the recent turns as a plain `Role: content` transcript.
 pub fn transcript(recent: &[Message]) -> String {
