@@ -67,10 +67,9 @@ pub fn rasterize(face: &Face, size: usize) -> Bitmap {
     bmp
 }
 
-const EAR_BASE_Y: f64 = 0.24;
-
 fn draw_ears(bmp: &mut Bitmap, ears: &crate::Ears) {
-    // Interpolate each ear's tip from drooped (perk -1) to perked-up (perk +1).
+    // Ears sit on the sides of the head, attached by a short vertical base. The tip
+    // swings from pointing up (perked, +1) to hanging down the side (drooped, -1).
     let t = (ears.perk.clamp(-1.0, 1.0) + 1.0) / 2.0;
     let lerp = |drooped: (f64, f64), perked: (f64, f64)| {
         (
@@ -78,12 +77,12 @@ fn draw_ears(bmp: &mut Bitmap, ears: &crate::Ears) {
             drooped.1 + (perked.1 - drooped.1) * t,
         )
     };
-    // Left ear (base above the left eye); tip swings up-in when perked, down-out when drooped.
-    let left_tip = lerp((0.16, 0.34), (0.30, 0.05));
-    fill_triangle(bmp, (0.26, EAR_BASE_Y), (0.40, EAR_BASE_Y), left_tip);
+    // Left ear, on the left side of the head.
+    let left_tip = lerp((0.07, 0.60), (0.15, 0.06));
+    fill_triangle(bmp, (0.20, 0.30), (0.20, 0.47), left_tip);
     // Right ear mirrors the left around x = 0.5.
-    let right_tip = lerp((0.84, 0.34), (0.70, 0.05));
-    fill_triangle(bmp, (0.60, EAR_BASE_Y), (0.74, EAR_BASE_Y), right_tip);
+    let right_tip = lerp((0.93, 0.60), (0.85, 0.06));
+    fill_triangle(bmp, (0.80, 0.30), (0.80, 0.47), right_tip);
 }
 
 /// Fill the triangle with normalized vertices `a`, `b`, `c` (winding-independent).
