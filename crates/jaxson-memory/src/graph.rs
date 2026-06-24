@@ -44,6 +44,15 @@ impl MemoryGraph {
         self.nodes.contains_key(&id)
     }
 
+    /// Whether any node already has this `content` (case-insensitive, trimmed). Used to
+    /// avoid storing the same memory twice.
+    pub fn contains_content(&self, content: &str) -> bool {
+        let needle = content.trim().to_lowercase();
+        self.nodes
+            .values()
+            .any(|node| node.content.trim().to_lowercase() == needle)
+    }
+
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
@@ -251,6 +260,22 @@ mod tests {
         assert!(g.remove_node(id(99)).is_none());
         assert_eq!(g.node_count(), 1);
         assert_eq!(g.edge_count(), 1);
+    }
+
+    #[test]
+    fn contains_content_is_case_insensitive() {
+        let mut g = MemoryGraph::new();
+        g.insert_node(MemoryNode::new(
+            id(1),
+            MemoryKind::Preference,
+            "Likes Hiking",
+            1,
+            Provenance::StatedByUser,
+            0.8,
+        ));
+        assert!(g.contains_content("likes hiking"));
+        assert!(g.contains_content("  Likes Hiking  "));
+        assert!(!g.contains_content("likes biking"));
     }
 
     #[test]

@@ -322,7 +322,12 @@ impl eframe::App for JaxsonApp {
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     for (who, text) in &self.transcript {
-                        ui.label(format!("{who}: {text}"));
+                        let color = if *who == "You" {
+                            Color32::from_rgb(0x66, 0xb2, 0xff) // you: blue
+                        } else {
+                            Color32::from_rgb(0x8f, 0xe3, 0x88) // jaxson: green
+                        };
+                        ui.colored_label(color, format!("{who}: {text}"));
                     }
                 });
 
