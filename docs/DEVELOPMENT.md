@@ -141,6 +141,25 @@ We log a lot, on purpose (NFR-4): decisions, state transitions, retrievals, timi
 all **structured** and **local**. Logs never leave the device and are scrubbed of raw
 sensitive content where feasible. Logs are git-ignored.
 
+Implemented with [`tracing`](https://docs.rs/tracing): the pure crates (notably
+`jaxson-agent`) emit events — a per-turn span, retrieval/learn counts, relationship-state
+transitions, and extraction failures (which were previously silent). The events are no-ops
+until a subscriber is installed, so the core stays pure and mutation-graded (only
+already-bound values are logged, never new computed expressions). The **app** installs the
+sink: human-readable lines to **stderr** and a **daily rolling file** at
+`~/Library/Application Support/Jaxson/jaxson.log` (next to the encrypted DB).
+
+```bash
+# Verbose run, watching the loop live:
+JAXSON_LOG=debug cargo run --manifest-path crates/jaxson-app/Cargo.toml --features sqlite,llama
+# Per-target filtering, e.g. agent debug + everything else at info:
+JAXSON_LOG=jaxson_agent=debug,info cargo run --manifest-path crates/jaxson-app/Cargo.toml
+```
+
+`JAXSON_LOG` uses `tracing-subscriber`'s `EnvFilter` syntax; the default is `info`. The
+`extract_probe` example above is still the tool for inspecting a model's *raw* extraction
+output; the logs tell you, in the running app, when extraction silently learned nothing.
+
 ## Privacy & security in the workflow
 
 - Never commit model weights, `*.gguf`/`*.safetensors`, user data, `*.sqlite`, or

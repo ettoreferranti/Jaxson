@@ -30,6 +30,11 @@ jaxson-agent = { path = "../jaxson-agent" }
 directories = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Structured local logging (NFR-4): the agent emits `tracing` events; the app installs
+# a stderr + rolling-file subscriber. Filter with JAXSON_LOG.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 # macOS Keychain access for the DB encryption key (sqlite feature only).
 keyring = { version = "3", features = ["apple-native"], optional = true }
 # Random key generation for first-run DB encryption (sqlite feature only).

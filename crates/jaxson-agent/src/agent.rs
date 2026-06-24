@@ -135,6 +135,9 @@ impl Agent {
         now: i64,
         user_input: &str,
     ) -> Result<Turn, AgentError> {
+        // One span per turn; raw user text is deliberately kept out of the fields
+        // (privacy — NFR-4). `n` is the turn's logical timestamp.
+        let _span = tracing::info_span!("turn", n = now).entered();
         self.history.push(Message::user(user_input));
 
         // Retrieve memories relevant to what the user just said.
@@ -146,6 +149,7 @@ impl Agent {
             .map(|node| node.content.clone())
             .collect();
         let retrieved = memories.len();
+        tracing::debug!(retrieved, "retrieved relevant memories");
 
         // Build the prompt and generate the reply.
         let prompt =
@@ -183,6 +187,14 @@ impl Agent {
             fraction: self.affect.responsiveness,
         });
 
+        tracing::debug!(
+            familiarity = self.state.familiarity(),
+            trust = self.state.trust(),
+            valence = self.state.mood().valence(),
+            "relationship state after turn"
+        );
+        tracing::info!(retrieved, learned, "turn complete");
+
         Ok(Turn {
             reply,
             mood: self.state.mood(),
@@ -200,19 +212,29 @@ impl Agent {
         now: i64,
     ) -> Result<usize, AgentError> {
         // Extraction is best-effort: a model that returns malformed/empty JSON simply
-        // means nothing was learned this turn, not a failed turn. (Logging this is F1.12.)
+        // means nothing was learned this turn, not a failed turn — but we log why, since
+        // a silently-failing extractor is exactly what made "no memories" hard to debug.
         // Extract with the same chat template the model is using.
         self.extractor.template = self.config.template;
         let window = self.recent_window();
         let extraction = match self.extractor.extract(model, &window) {
             Ok(extraction) => extraction,
-            Err(_) => return Ok(0),
+            Err(e) => {
+                tracing::warn!(error = %e, "memory extraction failed; nothing learned this turn");
+                return Ok(0);
+            }
         };
-        let (nodes, edges) =
-            match extraction.into_graph(now, self.extractor.provenance, MemoryId::new) {
-                Ok(graph) => graph,
-                Err(_) => return Ok(0),
-            };
+        let (nodes, edges) = match extraction.into_graph(
+            now,
+            self.extractor.provenance,
+            MemoryId::new,
+        ) {
+            Ok(graph) => graph,
+            Err(e) => {
+                tracing::warn!(error = %e, "extracted memories could not form a graph; nothing learned");
+                return Ok(0);
+            }
+        };
         let mut learned = 0;
         for node in nodes {
             // Don't store a memory we already have (dedup by content).
