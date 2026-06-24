@@ -1,6 +1,7 @@
 //! # jaxson-face
 //!
-//! The *geometry* of Jaxson's deliberately minimal face — two eyes and a mouth —
+//! The *geometry* of Jaxson's deliberately minimal face — two eyes, a mouth, and a
+//! pair of reactive ears —
 //! as a pure function of [`mood`](jaxson_core::MoodVector) and time. No rendering: a
 //! UI shell (the egui app, F1.8b) draws the [`Face`] this produces, and a future
 //! hardware bot can drive servos from the same numbers.
@@ -46,12 +47,20 @@ pub struct Mouth {
     pub openness: f64,
 }
 
-/// A full facial pose. The two eyes move together (the face is symmetric).
+/// Both ears (symmetric). `perk` is `-1.0` (drooped) … `0.0` (neutral) … `+1.0`
+/// (perked up, alert/excited).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Ears {
+    pub perk: f64,
+}
+
+/// A full facial pose. The two eyes and ears move together (the face is symmetric).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Face {
     pub left_eye: Eye,
     pub right_eye: Eye,
     pub mouth: Mouth,
+    pub ears: Ears,
 }
 
 /// Resting eye openness from arousal: calm is relaxed, alert is wide. Maps arousal
@@ -86,6 +95,12 @@ pub fn mouth_openness(arousal: f64) -> f64 {
     arousal.max(0.0) * 0.5
 }
 
+/// How perked the ears are from mood: alert/excited (high arousal, pleasant) perks them
+/// up, sadness droops them. Result in `[-1.0, 1.0]`.
+pub fn ear_perk(mood: MoodVector) -> f64 {
+    (0.7 * mood.arousal() + 0.3 * mood.valence()).clamp(-1.0, 1.0)
+}
+
 /// Slow idle gaze drift at time `t`, as `(dx, dy)` pupil offsets in eye-radius units.
 /// Bounded by `GAZE_AMPLITUDE` horizontally and half that vertically.
 pub fn gaze(t: f64) -> (f64, f64) {
@@ -109,6 +124,9 @@ pub fn face(mood: MoodVector, t: f64) -> Face {
         mouth: Mouth {
             curve: mouth_curve(mood.valence()),
             openness: mouth_openness(mood.arousal()),
+        },
+        ears: Ears {
+            perk: ear_perk(mood),
         },
     }
 }
@@ -209,17 +227,32 @@ mod tests {
     }
 
     #[test]
+    fn ear_perk_rises_with_arousal_and_droops_when_sad() {
+        assert!(ear_perk(MoodVector::new(0.8, 0.8)) > 0.5); // excited -> perked
+        assert!(ear_perk(MoodVector::new(-0.8, -0.6)) < 0.0); // sad -> drooped
+        assert!(approx(ear_perk(MoodVector::NEUTRAL), 0.0));
+    }
+
+    #[test]
+    fn ear_perk_is_clamped() {
+        assert_eq!(ear_perk(MoodVector::new(1.0, 1.0)), 1.0);
+        assert_eq!(ear_perk(MoodVector::new(-1.0, -1.0)), -1.0);
+    }
+
+    #[test]
     fn face_is_symmetric_and_expresses_mood() {
         let f = face(MoodVector::new(0.8, 0.5), 1.0);
         assert_eq!(f.left_eye, f.right_eye);
         assert!(approx(f.mouth.curve, 0.8));
         assert!(f.mouth.openness > 0.0);
+        assert!(f.ears.perk > 0.0); // happy+alert perks the ears
     }
 
     #[test]
-    fn sad_mood_frowns() {
+    fn sad_mood_frowns_and_droops_ears() {
         let f = face(MoodVector::new(-0.7, -0.5), 1.0);
         assert!(f.mouth.curve < 0.0);
         assert_eq!(f.mouth.openness, 0.0); // low arousal keeps the mouth closed
+        assert!(f.ears.perk < 0.0);
     }
 }

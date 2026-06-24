@@ -1,4 +1,4 @@
-use jaxson_affect::{analyze, AffectEngine};
+use jaxson_affect::{action_sentiment, analyze, AffectEngine, Sentiment};
 use jaxson_core::{MoodVector, RelationshipEvent, RelationshipState};
 use jaxson_extract::Extractor;
 use jaxson_llm::{assemble, ChatTemplate, GenerationConfig, Message, TextGenerator};
@@ -139,8 +139,11 @@ impl Agent {
         let raw = model
             .complete(&prompt, &self.config.gen_config)
             .map_err(|e| AgentError::Generation(e.to_string()))?;
-        // Strip reasoning blocks and any leaked chat-control tokens (e.g. <|im_end|>).
-        let reply = jaxson_llm::clean_output(&raw);
+        // Clean reasoning + chat-control tokens, then read Jaxson's expressed feeling
+        // from its own *action* cues before removing them from the displayed reply.
+        let cleaned = jaxson_llm::clean_output(&raw);
+        let expressed = action_sentiment(&cleaned);
+        let reply = jaxson_llm::strip_actions(&cleaned);
         self.history.push(Message::assistant(reply.clone()));
 
         // Learn from the latest exchange.
@@ -151,9 +154,14 @@ impl Agent {
             self.state = self.state.apply(RelationshipEvent::LearnedFact);
         }
 
-        // Mood follows the sentiment of what the user said (affect engine, decoupled
-        // from the model's wording). Smoothing lives in the state machine.
-        let target = self.affect.target_mood(&self.state, analyze(user_input));
+        // Mood: prefer Jaxson's expressed feeling (its action cues); otherwise fall back
+        // to the sentiment of what the user said. Smoothing lives in the state machine.
+        let sentiment = if expressed == Sentiment::NEUTRAL {
+            analyze(user_input)
+        } else {
+            expressed
+        };
+        let target = self.affect.target_mood(&self.state, sentiment);
         self.state = self.state.apply(RelationshipEvent::MoodObserved {
             target,
             fraction: self.affect.responsiveness,
@@ -298,6 +306,18 @@ mod tests {
         let mut agent = Agent::new("persona");
         let turn = agent.respond(&mut model, &embedder, 0, "hi").unwrap();
         assert_eq!(turn.reply, "Hello!");
+    }
+
+    #[test]
+    fn action_cues_are_stripped_and_drive_mood() {
+        let mut model =
+            ScriptedGenerator::new(["*ears perked up* Hi!", &extraction_json("nothing")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        let turn = agent.respond(&mut model, &embedder, 0, "hello").unwrap();
+        assert_eq!(turn.reply, "Hi!"); // the *action* is removed from the text
+                                       // The perked-up cue (not the neutral user input) drives a clearly positive mood.
+        assert!(turn.mood.valence() > 0.2);
     }
 
     #[test]

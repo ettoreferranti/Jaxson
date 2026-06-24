@@ -6,7 +6,7 @@
 
 use jaxson_core::MoodVector;
 use jaxson_face::{face, rasterize, Bitmap};
-use jaxson_face::{Eye, Face, Mouth};
+use jaxson_face::{Ears, Eye, Face, Mouth};
 
 fn show(label: &str, bmp: &Bitmap) {
     println!("== {label} ==");
@@ -51,6 +51,7 @@ fn main() {
             curve: 0.9,
             openness: 0.2,
         },
+        ears: Ears { perk: 0.8 },
     };
     show("happy mid-blink", &rasterize(&blinking, size));
 }

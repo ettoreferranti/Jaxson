@@ -1,5 +1,5 @@
 //! A tiny pure software rasterizer: turn a [`Face`] into a square black-and-white
-//! [`Bitmap`] — two eyes and a mouth, nothing else. No GUI, so the look of the face can
+//! [`Bitmap`] — two eyes, a mouth, and reactive ears. No GUI, so the look of the face can
 //! be validated headlessly (printed as ASCII, property-tested), and the egui app and a
 //! future hardware display can both draw from the very same pixels.
 
@@ -58,14 +58,61 @@ impl Bitmap {
 pub fn rasterize(face: &Face, size: usize) -> Bitmap {
     let mut bmp = Bitmap::new(size);
 
-    // Eyes (mirrored around the vertical centerline).
+    // Ears on top, then eyes (mirrored around the vertical centerline), then mouth.
+    draw_ears(&mut bmp, &face.ears);
     draw_eye(&mut bmp, 0.36, &face.left_eye);
     draw_eye(&mut bmp, 0.64, &face.right_eye);
-
-    // Mouth.
     draw_mouth(&mut bmp, &face.mouth);
 
     bmp
+}
+
+fn draw_ears(bmp: &mut Bitmap, ears: &crate::Ears) {
+    // Ears sit on the sides of the head, attached by a short vertical base. The tip
+    // swings from pointing up (perked, +1) to hanging down the side (drooped, -1).
+    let t = (ears.perk.clamp(-1.0, 1.0) + 1.0) / 2.0;
+    let lerp = |drooped: (f64, f64), perked: (f64, f64)| {
+        (
+            drooped.0 + (perked.0 - drooped.0) * t,
+            drooped.1 + (perked.1 - drooped.1) * t,
+        )
+    };
+    // Left ear, on the left side of the head.
+    let left_tip = lerp((0.07, 0.60), (0.15, 0.06));
+    fill_triangle(bmp, (0.20, 0.30), (0.20, 0.47), left_tip);
+    // Right ear mirrors the left around x = 0.5.
+    let right_tip = lerp((0.93, 0.60), (0.85, 0.06));
+    fill_triangle(bmp, (0.80, 0.30), (0.80, 0.47), right_tip);
+}
+
+/// Fill the triangle with normalized vertices `a`, `b`, `c` (winding-independent).
+fn fill_triangle(bmp: &mut Bitmap, a: (f64, f64), b: (f64, f64), c: (f64, f64)) {
+    let size = bmp.size as f64;
+    let p = |v: (f64, f64)| (v.0 * size, v.1 * size);
+    let (a, b, c) = (p(a), p(b), p(c));
+
+    let min_x = a.0.min(b.0).min(c.0).floor().max(0.0) as usize;
+    let max_x = ((a.0.max(b.0).max(c.0).ceil()) as usize).min(bmp.size - 1);
+    let min_y = a.1.min(b.1).min(c.1).floor().max(0.0) as usize;
+    let max_y = ((a.1.max(b.1).max(c.1).ceil()) as usize).min(bmp.size - 1);
+
+    let edge = |s: (f64, f64), e: (f64, f64), x: f64, y: f64| {
+        (e.0 - s.0) * (y - s.1) - (e.1 - s.1) * (x - s.0)
+    };
+
+    for py in min_y..=max_y {
+        for px in min_x..=max_x {
+            let (x, y) = (px as f64 + 0.5, py as f64 + 0.5);
+            let d1 = edge(a, b, x, y);
+            let d2 = edge(b, c, x, y);
+            let d3 = edge(c, a, x, y);
+            let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+            let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+            if !(has_neg && has_pos) {
+                bmp.set(px, py);
+            }
+        }
+    }
 }
 
 const EYE_CENTER_Y: f64 = 0.42;
@@ -174,7 +221,9 @@ fn fill_ellipse(bmp: &mut Bitmap, cxn: f64, cyn: f64, rxn: f64, ryn: f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{face, Eye, Mouth};
+    use crate::{face, Ears, Eye, Mouth};
+
+    const NEUTRAL_EARS: Ears = Ears { perk: 0.0 };
     use jaxson_core::MoodVector;
 
     fn symmetric_eye() -> Eye {
@@ -201,6 +250,7 @@ mod tests {
                 curve: 0.6,
                 openness: 0.2,
             },
+            ears: NEUTRAL_EARS,
         };
         let bmp = rasterize(&f, 64);
         for y in 0..bmp.size() {
@@ -223,6 +273,7 @@ mod tests {
                 curve: 0.0,
                 openness: 0.0,
             },
+            ears: NEUTRAL_EARS,
         };
         let mut shut = open;
         shut.left_eye.openness = 0.0;
@@ -248,6 +299,7 @@ mod tests {
                 curve: 1.0,
                 openness: 0.0,
             },
+            ears: NEUTRAL_EARS,
         };
         let bmp = rasterize(&f, 80);
         let lowest = |x: usize| (0..bmp.size()).filter(|&y| bmp.get(x, y)).max();

@@ -40,4 +40,4 @@ pub use error::LlmError;
 pub use generator::TextGenerator;
 pub use message::{Message, Role};
 pub use prompt::{assemble, build_system_message, ChatTemplate};
-pub use text::{clean_output, strip_reasoning, strip_special_tokens};
+pub use text::{clean_output, strip_actions, strip_reasoning, strip_special_tokens};
