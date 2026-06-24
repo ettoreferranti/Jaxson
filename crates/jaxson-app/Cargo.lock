@@ -1702,6 +1702,7 @@ dependencies = [
  "jaxson-core",
  "jaxson-face",
  "jaxson-llm",
+ "jaxson-memory",
 ]
 
 [[package]]

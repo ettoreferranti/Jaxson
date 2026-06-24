@@ -101,6 +101,11 @@ impl Agent {
         &self.graph
     }
 
+    /// Mutable access to the memory graph, for curation (the memory inspector).
+    pub fn graph_mut(&mut self) -> &mut MemoryGraph {
+        &mut self.graph
+    }
+
     pub fn history(&self) -> &[Message] {
         &self.history
     }
@@ -235,6 +240,21 @@ mod tests {
         format!(
             r#"{{"memories":[{{"kind":"fact","content":"{content}","confidence":0.9}}],"relations":[]}}"#
         )
+    }
+
+    #[test]
+    fn graph_mut_mutates_the_agents_own_graph() {
+        use jaxson_memory::{MemoryKind, MemoryNode, Provenance};
+        let mut agent = Agent::new("persona");
+        agent.graph_mut().insert_node(MemoryNode::new(
+            MemoryId::from_u128(1),
+            MemoryKind::Fact,
+            "x",
+            0,
+            Provenance::StatedByUser,
+            0.5,
+        ));
+        assert_eq!(agent.graph().node_count(), 1);
     }
 
     #[test]

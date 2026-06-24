@@ -68,7 +68,8 @@ cargo run --example raster_demo -p jaxson-face
 ### Run the app (macOS)
 
 ```bash
-# Opens a window with Jaxson's animated face + a chat box. The face reacts live to the
+# Opens a window with Jaxson's animated face + a chat box, and a "Memories" inspector
+# to browse / search / edit / delete what it has learned. The face reacts live to the
 # sentiment of what you type. (Excluded from the workspace; build it directly.)
 cargo run --manifest-path crates/jaxson-app/Cargo.toml
 ```

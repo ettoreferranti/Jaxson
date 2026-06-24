@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
-use crate::edge::Edge;
+use crate::edge::{Edge, Relation};
 use crate::node::{MemoryId, MemoryNode};
 
 /// Errors from graph operations.
@@ -99,6 +99,27 @@ impl MemoryGraph {
     /// All edges in the graph.
     pub fn edges(&self) -> &[Edge] {
         &self.edges
+    }
+
+    /// Nodes whose content contains `query` (case-insensitive), sorted by creation time
+    /// then id for stable display. An empty/whitespace query returns every node.
+    pub fn search(&self, query: &str) -> Vec<&MemoryNode> {
+        let needle = query.trim().to_lowercase();
+        let mut matches: Vec<&MemoryNode> = self
+            .nodes
+            .values()
+            .filter(|node| needle.is_empty() || node.content.to_lowercase().contains(&needle))
+            .collect();
+        matches.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+        matches
+    }
+
+    /// Remove every edge matching `(from, to, relation)`. Returns how many were removed.
+    pub fn remove_edge(&mut self, from: MemoryId, to: MemoryId, relation: Relation) -> usize {
+        let before = self.edges.len();
+        self.edges
+            .retain(|e| !(e.from == from && e.to == to && e.relation == relation));
+        before - self.edges.len()
     }
 }
 
@@ -230,6 +251,56 @@ mod tests {
         assert!(g.remove_node(id(99)).is_none());
         assert_eq!(g.node_count(), 1);
         assert_eq!(g.edge_count(), 1);
+    }
+
+    #[test]
+    fn search_matches_content_case_insensitively() {
+        let mut g = MemoryGraph::new();
+        g.insert_node(MemoryNode::new(
+            id(1),
+            MemoryKind::Preference,
+            "Likes Hiking",
+            1,
+            Provenance::StatedByUser,
+            0.8,
+        ));
+        g.insert_node(MemoryNode::new(
+            id(2),
+            MemoryKind::Person,
+            "Has a dog",
+            2,
+            Provenance::StatedByUser,
+            0.8,
+        ));
+        let hits = g.search("HIK");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, id(1));
+    }
+
+    #[test]
+    fn search_empty_returns_all_sorted_by_created_at() {
+        let mut g = MemoryGraph::new();
+        g.insert_node(node(3));
+        g.insert_node(node(1));
+        g.insert_node(node(2));
+        let order: Vec<i64> = g.search("  ").iter().map(|n| n.created_at).collect();
+        assert_eq!(order, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn remove_edge_removes_only_matching_edges() {
+        let mut g = MemoryGraph::new();
+        g.insert_node(node(1));
+        g.insert_node(node(2));
+        g.insert_edge(Edge::new(id(1), id(2), Relation::Knows, 0.5))
+            .unwrap();
+        g.insert_edge(Edge::new(id(1), id(2), Relation::Likes, 0.5))
+            .unwrap();
+        assert_eq!(g.remove_edge(id(1), id(2), Relation::Knows), 1);
+        assert_eq!(g.edge_count(), 1);
+        assert_eq!(g.edges()[0].relation, Relation::Likes);
+        // Removing again removes nothing.
+        assert_eq!(g.remove_edge(id(1), id(2), Relation::Knows), 0);
     }
 
     #[test]

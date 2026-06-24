@@ -12,11 +12,12 @@ use std::time::Instant;
 use eframe::egui;
 use egui::Color32;
 
-use jaxson_agent::{Agent, AgentConfig, HashEmbedder};
+use jaxson_agent::{Agent, AgentConfig, Embedder, HashEmbedder};
 use jaxson_core::MoodVector;
 use jaxson_face::{face, rasterize, Bitmap};
 use jaxson_llm::ollama::{self, OllamaModel};
 use jaxson_llm::{ChatTemplate, GenerationConfig, LlmError, TextGenerator};
+use jaxson_memory::{MemoryId, MemoryKind, MemoryNode};
 
 const PERSONA: &str = "You are Jaxson, a warm, curious companion getting to know its owner.";
 const FACE_PIXELS: usize = 250;
@@ -91,6 +92,11 @@ struct JaxsonApp {
     start: Instant,
     turn: i64,
     face_tex: egui::TextureHandle,
+    // Memory inspector state.
+    show_memories: bool,
+    mem_search: String,
+    editing: Option<MemoryId>,
+    edit_buf: String,
 }
 
 impl JaxsonApp {
@@ -125,6 +131,100 @@ impl JaxsonApp {
             start: Instant::now(),
             turn: 0,
             face_tex,
+            show_memories: false,
+            mem_search: String::new(),
+            editing: None,
+            edit_buf: String::new(),
+        }
+    }
+
+    /// The memory inspector window: browse, search, edit, and delete what Jaxson knows.
+    fn memory_window(&mut self, ctx: &egui::Context) {
+        if !self.show_memories {
+            return;
+        }
+        // Snapshot the (filtered) memories as owned data so we can mutate the graph after.
+        let items: Vec<(MemoryId, String, MemoryKind, f32)> = self
+            .agent
+            .graph()
+            .search(&self.mem_search)
+            .iter()
+            .map(|n| (n.id, n.content.clone(), n.kind, n.confidence))
+            .collect();
+
+        let mut to_delete: Option<MemoryId> = None;
+        let mut to_save: Option<(MemoryId, String)> = None;
+        let mut open = true;
+
+        egui::Window::new("Memories")
+            .open(&mut open)
+            .default_width(340.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("search:");
+                    ui.text_edit_singleline(&mut self.mem_search);
+                });
+                ui.separator();
+                if items.is_empty() {
+                    ui.label("(nothing remembered yet)");
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(320.0)
+                    .show(ui, |ui| {
+                        for (id, content, kind, confidence) in &items {
+                            ui.group(|ui| {
+                                if self.editing == Some(*id) {
+                                    ui.text_edit_singleline(&mut self.edit_buf);
+                                    ui.horizontal(|ui| {
+                                        if ui.button("Save").clicked() {
+                                            to_save = Some((*id, self.edit_buf.clone()));
+                                        }
+                                        if ui.button("Cancel").clicked() {
+                                            self.editing = None;
+                                        }
+                                    });
+                                } else {
+                                    ui.label(format!("[{kind:?}] {content}"));
+                                    ui.horizontal(|ui| {
+                                        ui.small(format!("confidence {confidence:.2}"));
+                                        if ui.button("Edit").clicked() {
+                                            self.editing = Some(*id);
+                                            self.edit_buf = content.clone();
+                                        }
+                                        if ui.button("Delete").clicked() {
+                                            to_delete = Some(*id);
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    });
+            });
+        if !open {
+            self.show_memories = false;
+        }
+
+        if let Some(id) = to_delete {
+            self.agent.graph_mut().remove_node(id);
+            if self.editing == Some(id) {
+                self.editing = None;
+            }
+        }
+        if let Some((id, new_content)) = to_save {
+            // Rebuild the node with the new content and a fresh embedding.
+            let fields = self
+                .agent
+                .graph()
+                .node(id)
+                .map(|n| (n.kind, n.created_at, n.provenance, n.confidence));
+            if let Some((kind, created_at, provenance, confidence)) = fields {
+                let embedding = self.embedder.embed(&new_content);
+                let updated =
+                    MemoryNode::new(id, kind, new_content, created_at, provenance, confidence)
+                        .with_embedding(embedding);
+                self.agent.graph_mut().insert_node(updated);
+            }
+            self.editing = None;
         }
     }
 
@@ -234,7 +334,14 @@ impl eframe::App for JaxsonApp {
                     ui.memory_mut(|m| m.request_focus(response.id));
                 }
             });
+
+            let label = format!("🧠 Memories ({})", self.agent.graph().node_count());
+            if ui.button(label).clicked() {
+                self.show_memories = !self.show_memories;
+            }
         });
+
+        self.memory_window(ctx);
 
         // Keep animating between interactions.
         ctx.request_repaint();
