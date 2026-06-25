@@ -13,6 +13,9 @@ Respond with ONLY a JSON object of the form:\n\
 {\"memories\":[{\"kind\":\"fact|person|event|preference|episode\",\"content\":\"...\",\"confidence\":0.0-1.0}],\
 \"relations\":[{\"from\":<memory index>,\"to\":<memory index>,\"relation\":\"likes|dislikes|knows|related_to|happened_on|causes\",\"weight\":0.0-1.0}]}\n\
 Use only those exact `kind` and `relation` values. \
+Write each `content` as a complete, self-contained sentence that still makes sense on its \
+own later — e.g. \"The user's name is Ettore\" or \"The user has a dog named Rex\", never \
+just \"Ettore\" or \"Rex\". \
 Only include things clearly stated or strongly implied. Do not invent details. \
 If there is nothing worth remembering, return {\"memories\":[],\"relations\":[]}. \
 Do not explain or show your reasoning — output only the JSON object. /no_think";
