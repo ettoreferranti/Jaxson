@@ -73,7 +73,16 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   `jaxson-face` bitmap, refreshed each frame) above a chat box, wired to a mock-backed
   agent — the face reacts live to the sentiment of typed input. Excluded from the
   workspace/CI (native GUI); run on macOS. Reply text is canned until a real model.
-- [ ] **F1.9** Chat view text I/O.
+- [x] **F1.9** Chat view text I/O: wrapping, **selectable** transcript (read/copy long
+  replies) with a styled speaker tag; full-width input with a hint and a Send button that's
+  disabled while empty; "🧹 Clear chat" that resets the visible chat **and** the model's
+  short-term context (`Agent::clear_history`) while keeping long-term memory. Agent also
+  gained `respond_streaming` (live token callback, tested + 0-missed) — the seam a future
+  non-blocking UI builds on.
+- [ ] **F1.9b** Non-blocking / streaming chat UI: run generation on a background worker so
+  the window doesn't freeze during a real-model turn, streaming tokens live via
+  `Agent::respond_streaming`. (Deferred from F1.9 — a focused concurrency change, best done
+  where it can be run on macOS.)
 - [x] **F1.10** Memory inspector: a window to browse / search / edit / delete memories
   (deleting a node also drops its edges). `MemoryGraph::search` + `remove_edge` (pure,
   tested); `Agent::graph_mut` for curation; egui inspector in the app.
