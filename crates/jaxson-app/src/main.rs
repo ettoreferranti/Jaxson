@@ -62,11 +62,17 @@ fn select_template() -> ChatTemplate {
 /// What `boot` produces: the chat generator, the active embedder, a status label, and —
 /// with a real model — the embedder that shares the chat model's weights (kept so "same
 /// as chat" can be reselected later without reloading) plus the initial dedicated-embed
-/// selection from `$JAXSON_EMBED_MODEL`.
+/// selection from `$JAXSON_EMBED_MODEL`. `selected`/`template` are set when the chat model
+/// was resolved by name (so the picker reflects it and the chat format matches).
 struct Boot {
     model: Box<dyn TextGenerator>,
     embedder: Box<dyn Embedder>,
     status: String,
+    /// The discovered-model index the chat model resolved to (by name), if any.
+    selected: Option<usize>,
+    /// The chat template to use, when known from the model name; else `None` (fall back
+    /// to `$JAXSON_TEMPLATE`).
+    template: Option<ChatTemplate>,
     #[cfg(feature = "llama")]
     base_embedder: Option<jaxson_llm::backends::LlamaEmbedder>,
     #[cfg(feature = "llama")]
@@ -74,32 +80,53 @@ struct Boot {
 }
 
 /// The initial brain: the real model from `$JAXSON_MODEL` when built with `--features
-/// llama`, otherwise the demo brain. `$JAXSON_EMBED_MODEL` (a discovered model name)
-/// optionally selects a separate embedding model; otherwise embeddings come from the
-/// chat model.
+/// llama`, otherwise the demo brain. `$JAXSON_MODEL` accepts a discovered model **name**
+/// (e.g. `llama3.1`) — in which case the chat template is auto-selected — or a path to a
+/// `.gguf`. `$JAXSON_EMBED_MODEL` (a discovered model name) optionally selects a separate
+/// embedding model; otherwise embeddings come from the chat model.
 #[cfg_attr(not(feature = "llama"), allow(unused_variables))]
 fn boot(models: &[OllamaModel]) -> Boot {
     #[cfg(feature = "llama")]
     {
         use jaxson_llm::backends::{load_generator_and_embedder, LlamaConfig};
-        if let Ok(path) = std::env::var("JAXSON_MODEL") {
-            match load_generator_and_embedder(&LlamaConfig {
-                model_path: path.clone().into(),
-                ..Default::default()
-            }) {
-                Ok((generator, shared)) => {
-                    let embed_selected = std::env::var("JAXSON_EMBED_MODEL")
-                        .ok()
-                        .and_then(|m| resolve_model(models, &m));
-                    return Boot {
-                        model: Box::new(generator),
-                        embedder: active_embedder(models, embed_selected, &shared),
-                        status: format!("model: {path}"),
-                        base_embedder: Some(shared),
-                        embed_selected,
-                    };
+        if let Ok(arg) = std::env::var("JAXSON_MODEL") {
+            // Resolve as a direct `.gguf` path, or a discovered model name.
+            let resolved = {
+                let path = std::path::PathBuf::from(&arg);
+                if path.is_file() {
+                    Some((None, path))
+                } else {
+                    resolve_model(models, &arg).map(|i| (Some(i), models[i].path.clone()))
                 }
-                Err(e) => eprintln!("Failed to load JAXSON_MODEL ({path}): {e}"),
+            };
+            match resolved {
+                Some((selected, path)) => match load_generator_and_embedder(&LlamaConfig {
+                    model_path: path,
+                    ..Default::default()
+                }) {
+                    Ok((generator, shared)) => {
+                        let embed_selected = std::env::var("JAXSON_EMBED_MODEL")
+                            .ok()
+                            .and_then(|m| resolve_model(models, &m));
+                        // When resolved by name, mirror the picker: show it and match the
+                        // chat format to the model so it doesn't emit garbled tokens.
+                        let name = selected.map(|i| models[i].name.clone());
+                        let template = name.as_deref().map(ChatTemplate::for_model_name);
+                        return Boot {
+                            model: Box::new(generator),
+                            embedder: active_embedder(models, embed_selected, &shared),
+                            status: format!("model: {}", name.unwrap_or(arg)),
+                            selected,
+                            template,
+                            base_embedder: Some(shared),
+                            embed_selected,
+                        };
+                    }
+                    Err(e) => eprintln!("Failed to load JAXSON_MODEL ({arg}): {e}"),
+                },
+                None => eprintln!(
+                    "JAXSON_MODEL '{arg}' is not a .gguf file or a known model name; using demo brain"
+                ),
             }
         }
     }
@@ -107,6 +134,8 @@ fn boot(models: &[OllamaModel]) -> Boot {
         model: Box::new(DemoModel),
         embedder: Box::new(HashEmbedder::default()),
         status: "demo brain".to_string(),
+        selected: None,
+        template: None,
         #[cfg(feature = "llama")]
         base_embedder: None,
         #[cfg(feature = "llama")]
@@ -207,7 +236,9 @@ impl JaxsonApp {
                 .load_texture("jaxson-face", neutral, egui::TextureOptions::NEAREST);
         let models = ollama::discover();
         let boot = boot(&models);
-        let template = select_template();
+        // Prefer the template boot picked from the chat model's name; otherwise honor
+        // $JAXSON_TEMPLATE (default ChatML).
+        let template = boot.template.unwrap_or_else(select_template);
         // Load any previously persisted memory before the agent starts the session.
         let mut persist = persist::Persistence::open();
         let graph = persist.load();
@@ -232,7 +263,7 @@ impl JaxsonApp {
             #[cfg(feature = "llama")]
             embed_selected: boot.embed_selected,
             models,
-            selected: None,
+            selected: boot.selected,
             status: boot.status,
             transcript: vec![("Jaxson", "Hi! I'm Jaxson. What's your name?".to_string())],
             input: String::new(),

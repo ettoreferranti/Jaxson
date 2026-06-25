@@ -57,8 +57,11 @@ over `jaxson-agent` (brain) and `jaxson-face` (pixels); anything worth testing b
 in those crates.
 
 To run on the **real local model** (instead of the mock demo brain), build with
-`--features llama` and point `JAXSON_MODEL` at a GGUF; `JAXSON_TEMPLATE` (chatml/llama3/
-plain) picks the chat format. See the README's "Use the real local model" section.
+`--features llama` and set `JAXSON_MODEL` to an installed Ollama model **name** (e.g.
+`llama3.1` — the chat template is auto-selected) or a `.gguf` path (then set
+`JAXSON_TEMPLATE` = chatml/llama3/plain to match). `JAXSON_EMBED_MODEL` (a model name)
+optionally picks a separate embedding model. See the README's "Use the real local model"
+section.
 Validate a model in isolation first with the headless `jaxson-llm` examples:
 `cargo run -p jaxson-llm --example llama_chat --features llama -- <model.gguf>` (chat),
 `cargo run -p jaxson-llm --example embed_probe --features llama -- <model-name>` (embeddings
