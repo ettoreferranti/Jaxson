@@ -18,6 +18,9 @@ llama = ["jaxson-llm/llama"]
 # Pulls a C toolchain (vendored SQLCipher + OpenSSL); off by default so plain builds
 # stay light and ephemeral. Build: `--features sqlite`. See docs/PRIVACY-SECURITY.md.
 sqlite = ["jaxson-memory/sqlite", "dep:keyring", "dep:uuid"]
+# Voice input: whisper.cpp STT + microphone capture (cpal). Build: `--features whisper`,
+# and set JAXSON_WHISPER_MODEL to a whisper model (e.g. ggml-base.en.bin). See F2.1b.
+whisper = ["jaxson-perception/whisper", "dep:cpal"]
 
 [dependencies]
 eframe = "0.29"
@@ -27,7 +30,10 @@ jaxson-face = { path = "../jaxson-face" }
 jaxson-llm = { path = "../jaxson-llm" }
 jaxson-memory = { path = "../jaxson-memory" }
 jaxson-agent = { path = "../jaxson-agent" }
+jaxson-perception = { path = "../jaxson-perception" }
 directories = "5"
+# Microphone capture for push-to-talk (whisper feature only).
+cpal = { version = "0.15", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Structured local logging (NFR-4): the agent emits `tracing` events; the app installs

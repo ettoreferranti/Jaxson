@@ -61,7 +61,7 @@ macOS app crate (added in v0.1) depends on them.
 | `jaxson-perception` | Speech: `SpeechToText` seam + pure audio utilities (downmix, RMS, silence-trim) + deterministic `MockStt`; whisper.cpp (Metal) STT backend behind the `whisper` feature. Local TTS still to come | ✅ (pure) / whisper (feature) | **STT built (F2.1)** / TTS backlog |
 | `jaxson-agent` | Orchestration: the per-turn conversation loop (retrieve → prompt → reply → extract → state), with an `Embedder` seam (`HashEmbedder` stand-in), familiarity-gated proactive curiosity, and structured `tracing` instrumentation | ✅ | **built (F1.7, F1.11, F1.12)** |
 | `jaxson-face` | Pure face geometry (`mood` + time → eye/mouth shapes, blink, gaze) **+ a software rasterizer** to a B/W `Bitmap` — no GUI | ✅ | **built (F1.8a)** |
-| `jaxson-app` | egui shell: animated face + chat view (wrapping/selectable transcript, clear-chat); model + embedding pickers; memory inspector; Keychain-keyed encrypted persistence behind its own `sqlite` feature; installs the `tracing` log sink. Excluded from the workspace (native GUI; run on macOS) | ❌ | **built (F1.8b, F1.9, F1.10, F1.12, F1.13)** |
+| `jaxson-app` | egui shell: animated face + chat view (wrapping/selectable transcript, clear-chat); model + embedding pickers; push-to-talk mic (cpal → whisper) behind its `whisper` feature; memory inspector; Keychain-keyed encrypted persistence behind its `sqlite` feature; installs the `tracing` log sink. Excluded from the workspace (native GUI; run on macOS) | ❌ | **built (F1.8b, F1.9, F1.10, F1.12, F1.13, F2.1b)** |
 
 Native/heavy deps are always isolated behind cargo features: `jaxson-llm`'s `llama`
 (`llama.cpp` + Metal), `jaxson-memory`'s `sqlite` (SQLCipher), and `jaxson-perception`'s
