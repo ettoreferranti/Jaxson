@@ -86,19 +86,21 @@ your sentiment). To run Jaxson on a real local LLM:
    ```bash
    cargo run -p jaxson-llm --example llama_chat --features llama -- /path/to/model.gguf "Hi!"
    ```
-4. Run the app with the real brain:
+4. Run the app with the real brain — `JAXSON_MODEL` takes an installed Ollama model
+   **name** (template auto-selected) or a path to a `.gguf`:
    ```bash
-   JAXSON_MODEL=/path/to/model.gguf \
-     cargo run --manifest-path crates/jaxson-app/Cargo.toml --features llama
+   JAXSON_MODEL=llama3.1 JAXSON_EMBED_MODEL=nomic-embed-text \
+     cargo run --manifest-path crates/jaxson-app/Cargo.toml --features sqlite,llama
    ```
-
-Set `JAXSON_TEMPLATE=llama3` for Llama-3 models (default is ChatML, right for Qwen).
-See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for details.
+   `JAXSON_EMBED_MODEL` (a model name) optionally embeds with a separate model; omit it to
+   reuse the chat model. When you pass `JAXSON_MODEL` as a **path**, also set
+   `JAXSON_TEMPLATE=llama3` for Llama-3 models (default ChatML); resolving by name handles
+   this for you. See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 **Using Ollama as a model manager:** if you already have models in Ollama, just build
-with `--features llama` — the app shows a **dropdown of your installed Ollama models**
-(it reads `~/.ollama` directly; Ollama models are GGUF, no conversion needed). Pick one
-to load it; no need to hunt down blob paths.
+with `--features llama` — the app shows **dropdowns of your installed Ollama models** for
+both the chat model and the embedding model (it reads `~/.ollama` directly; Ollama models
+are GGUF, no conversion needed). Pick one to load it; no need to hunt down blob paths.
 
 The macOS app crate arrives with v0.1 (see the backlog).
 
