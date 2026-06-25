@@ -1,0 +1,22 @@
+[package]
+name = "jaxson-perception"
+description = "Local speech perception: a SpeechToText seam + pure audio utilities, with a whisper.cpp (Metal) backend behind the `whisper` feature."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Native whisper.cpp STT with Metal offload (whisper-rs). Needs cmake + a C/C++
+# toolchain at BUILD time and a local whisper model (GGML/GGUF) at RUNTIME. Not built in
+# CI — see docs/DEVELOPMENT.md. Off by default so the pure seam stays light and graded.
+whisper = ["dep:whisper-rs"]
+
+[dependencies]
+thiserror = { workspace = true }
+whisper-rs = { version = "0.16", optional = true }
+
+[dev-dependencies]
+# Read WAV files in the `whisper_transcribe` example.
+hound = "3"

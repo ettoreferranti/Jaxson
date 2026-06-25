@@ -41,6 +41,23 @@ Unlike the model, this is fully testable, so **CI does build and test it** (the
 Keychain in the app), and opening with the wrong key fails. `*.jaxsondb`/`*.sqlite`
 are git-ignored.
 
+## The `whisper` feature (speech-to-text)
+
+`jaxson-perception` is pure by default (the `SpeechToText` seam, audio helpers, and
+`MockStt`). The real whisper.cpp + Metal backend is behind the `whisper` feature (needs
+cmake + a C/C++ toolchain to build and a whisper model to run). Grab a model from
+whisper.cpp's releases (e.g. `ggml-base.en.bin`) and smoke-test it on a **16 kHz mono** WAV:
+
+```bash
+# make a test clip on macOS, then transcribe it
+say -o /tmp/s.aiff "Hello Jaxson"; afconvert -f WAVE -d LEI16@16000 -c 1 /tmp/s.aiff /tmp/s.wav
+cargo run -p jaxson-perception --example whisper_transcribe --features whisper -- \
+    /path/to/ggml-base.en.bin /tmp/s.wav
+```
+
+Like the model, the native backend isn't built in CI — the pure layer (mutation-graded)
+is. Models (`*.bin`) and audio are git-ignored.
+
 ## The desktop app (`jaxson-app`)
 
 The egui GUI lives in `crates/jaxson-app` but is **excluded from the Cargo workspace**
