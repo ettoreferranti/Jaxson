@@ -525,17 +525,32 @@ impl eframe::App for JaxsonApp {
                         } else {
                             Color32::from_rgb(0x8f, 0xe3, 0x88) // jaxson: green
                         };
-                        ui.colored_label(color, format!("{who}: {text}"));
+                        // Wrap long messages and keep the text selectable (so replies can
+                        // be read fully and copied). The speaker name is the colored tag.
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            ui.colored_label(color, egui::RichText::new(format!("{who}:")).strong());
+                            ui.label(text);
+                        });
+                        ui.add_space(4.0);
                     }
                 });
 
             ui.separator();
 
             ui.horizontal(|ui| {
-                let response = ui.text_edit_singleline(&mut self.input);
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut self.input)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("Talk to Jaxson…"),
+                );
                 let entered =
                     response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                if ui.button("Send").clicked() || entered {
+                let can_send = !self.input.trim().is_empty();
+                let clicked = ui
+                    .add_enabled(can_send, egui::Button::new("Send"))
+                    .clicked();
+                if clicked || (entered && can_send) {
                     self.send();
                     ui.memory_mut(|m| m.request_focus(response.id));
                 }
@@ -545,6 +560,13 @@ impl eframe::App for JaxsonApp {
                 let label = format!("🧠 Memories ({})", self.agent.graph().node_count());
                 if ui.button(label).clicked() {
                     self.show_memories = !self.show_memories;
+                }
+                // Clear the visible chat and the model's short-term context — long-term
+                // memory (the graph) is kept.
+                if ui.button("🧹 Clear chat").clicked() {
+                    self.agent.clear_history();
+                    self.transcript =
+                        vec![("Jaxson", "Fresh start! What's on your mind?".to_string())];
                 }
                 // Debug dump: the DB is encrypted, so this is the readable view.
                 if ui.button("⬇ Export JSON").clicked() {

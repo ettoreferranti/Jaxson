@@ -121,6 +121,13 @@ impl Agent {
         &self.history
     }
 
+    /// Clear the short-term conversation history (the recent turns the model sees as
+    /// context) without touching long-term memory or the relationship state. Backs the
+    /// app's "clear chat".
+    pub fn clear_history(&mut self) {
+        self.history.clear();
+    }
+
     /// Current mood for the face.
     pub fn mood(&self) -> MoodVector {
         self.state.mood()
@@ -134,6 +141,21 @@ impl Agent {
         embedder: &dyn Embedder,
         now: i64,
         user_input: &str,
+    ) -> Result<Turn, AgentError> {
+        self.respond_streaming(model, embedder, now, user_input, &mut |_| {})
+    }
+
+    /// Like [`respond`](Self::respond), but streams the reply's raw token pieces through
+    /// `on_token` as they're generated — so a UI can show the answer appearing live
+    /// instead of freezing until it's done. The streamed pieces are *raw* (reasoning and
+    /// `*action*` cues not yet stripped); [`Turn::reply`] is the cleaned final text.
+    pub fn respond_streaming(
+        &mut self,
+        model: &mut dyn TextGenerator,
+        embedder: &dyn Embedder,
+        now: i64,
+        user_input: &str,
+        on_token: &mut dyn FnMut(&str),
     ) -> Result<Turn, AgentError> {
         // One span per turn; raw user text is deliberately kept out of the fields
         // (privacy — NFR-4). `n` is the turn's logical timestamp.
@@ -151,13 +173,13 @@ impl Agent {
         let retrieved = memories.len();
         tracing::debug!(retrieved, "retrieved relevant memories");
 
-        // Build the prompt and generate the reply.
+        // Build the prompt and generate the reply, streaming tokens to the caller.
         let prompt =
             self.config
                 .template
                 .render(&assemble(&self.system_prompt(), &memories, &self.history));
         let raw = model
-            .complete(&prompt, &self.config.gen_config)
+            .generate(&prompt, &self.config.gen_config, on_token)
             .map_err(|e| AgentError::Generation(e.to_string()))?;
         // Clean reasoning + chat-control tokens, then read Jaxson's expressed feeling
         // from its own *action* cues before removing them from the displayed reply.
@@ -361,6 +383,42 @@ mod tests {
         assert_eq!(agent.graph().node_count(), 1);
         assert_eq!(agent.history().len(), 2); // user + assistant
         assert!(agent.state().familiarity() > 0.0);
+    }
+
+    #[test]
+    fn respond_streaming_emits_the_reply_as_it_generates() {
+        let mut model = ScriptedGenerator::new(["Hello there friend", &extraction_json("nothing")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+
+        let mut streamed = String::new();
+        let turn = agent
+            .respond_streaming(&mut model, &embedder, 0, "hi", &mut |piece| {
+                streamed.push_str(piece)
+            })
+            .unwrap();
+
+        // The pieces stream through the callback and reassemble into the reply.
+        assert!(streamed.contains("Hello"));
+        assert!(streamed.contains("friend"));
+        assert_eq!(turn.reply, "Hello there friend");
+    }
+
+    #[test]
+    fn clear_history_drops_context_but_keeps_memory_and_state() {
+        let mut model = ScriptedGenerator::new(["hi", &extraction_json("User likes tea")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        agent.respond(&mut model, &embedder, 0, "hello").unwrap();
+        assert!(!agent.history().is_empty());
+        let memories = agent.graph().node_count();
+        let familiarity = agent.state().familiarity();
+
+        agent.clear_history();
+
+        assert!(agent.history().is_empty());
+        assert_eq!(agent.graph().node_count(), memories); // long-term memory intact
+        assert_eq!(agent.state().familiarity(), familiarity); // relationship intact
     }
 
     #[test]
