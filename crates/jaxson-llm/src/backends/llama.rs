@@ -164,6 +164,10 @@ impl TextGenerator for LlamaGenerator {
 /// Produces real semantic embeddings from the local model (F1.4b): mean-pooled hidden
 /// states over the input, L2-normalized. Shares the model's weights with a
 /// [`LlamaGenerator`] when built via [`load_generator_and_embedder`].
+///
+/// `Clone` is cheap (an `Arc` bump), so the app can keep one around to reuse when the
+/// embedding model is "same as the chat model".
+#[derive(Clone)]
 pub struct LlamaEmbedder {
     model: Arc<LlamaModel>,
     /// Context window for an embedding pass. Memory snippets are short, so this can be
