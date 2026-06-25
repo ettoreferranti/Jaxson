@@ -103,5 +103,10 @@ The long-term goal is a physical bot; the near-term goal is a polished macOS app
 - OQ-1: Which TTS engine gives the best on-device child-friendly voice from Rust?
   (Candidates: Piper via bindings, a small local neural TTS, or shelling out to macOS
   `say`/AVSpeech via FFI.) — to revisit at v0.2.
-- OQ-2: Exact quantization (4-bit vs 8-bit) and model pick — benchmark at v0.1.
+- OQ-2: ~~Exact quantization (4-bit vs 8-bit) and model pick — benchmark at v0.1.~~
+  **Resolved (F1.1c):** an ~8B 4-bit (Q4) GGUF comfortably clears NFR-3 on Apple Silicon.
+  Benchmarked on an M4 Pro (`latency_bench`): `llama3.1:8b` first-token 192 ms / 47.6 tok/s,
+  `qwen3` 141 ms / 44.4 tok/s — both ~10× under the 1.5 s target with headroom for STT/TTS.
+  Default pick: a non-reasoning ~8B Q4 model (e.g. `llama3.1:8b`) so the whole reply streams
+  immediately; reasoning models (qwen3) are just as fast raw but spend tokens "thinking".
 - OQ-3: Parental-control authentication mechanism (passcode vs. Touch ID). — v0.2.

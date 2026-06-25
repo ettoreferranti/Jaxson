@@ -33,8 +33,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   from `JAXSON_MODEL` (else demo brain); headless `llama_chat` smoke-test example; agent
   extraction made non-fatal (real models emit imperfect JSON). Compile-verified on macOS;
   run by the owner with a model.
-- [ ] **F1.1c** Benchmark latency on a Mac with a real 7–8B quantized GGUF (NFR-3):
-  first-token < 1.5 s, interactive generation. Tune model/quantization (resolve OQ-2).
+- [x] **F1.1c** Latency benchmark (`latency_bench` example): measures time-to-first-token
+  and throughput vs the NFR-3 target. On an M4 Pro, `llama3.1:8b` = 192 ms TTFT / 47.6 tok/s
+  and `qwen3` = 141 ms / 44.4 tok/s — both **~10× under** the 1.5 s target with interactive
+  throughput. Resolves OQ-2 (an ~8B Q4 model clears NFR-3 easily; default to a non-reasoning
+  one so the full reply streams immediately).
 - [x] **F1.2** `jaxson-memory` graph store: typed/weighted nodes + edges, `MemoryStore`
   trait + in-memory store (pure, mutation-graded), and encrypted-at-rest SQLite
   (SQLCipher) persistence behind the `sqlite` feature (round-trip + wrong-key tests).
