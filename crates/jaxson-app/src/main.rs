@@ -57,36 +57,128 @@ fn select_template() -> ChatTemplate {
     }
 }
 
+/// What `boot` produces: the chat generator, the active embedder, a status label, and —
+/// with a real model — the embedder that shares the chat model's weights (kept so "same
+/// as chat" can be reselected later without reloading) plus the initial dedicated-embed
+/// selection from `$JAXSON_EMBED_MODEL`.
+struct Boot {
+    model: Box<dyn TextGenerator>,
+    embedder: Box<dyn Embedder>,
+    status: String,
+    #[cfg(feature = "llama")]
+    base_embedder: Option<jaxson_llm::backends::LlamaEmbedder>,
+    #[cfg(feature = "llama")]
+    embed_selected: Option<usize>,
+}
+
 /// The initial brain: the real model from `$JAXSON_MODEL` when built with `--features
-/// llama`, otherwise the demo brain. Returns the model and a short status label.
-fn make_model() -> (Box<dyn TextGenerator>, String) {
+/// llama`, otherwise the demo brain. `$JAXSON_EMBED_MODEL` (a discovered model name)
+/// optionally selects a separate embedding model; otherwise embeddings come from the
+/// chat model.
+#[cfg_attr(not(feature = "llama"), allow(unused_variables))]
+fn boot(models: &[OllamaModel]) -> Boot {
     #[cfg(feature = "llama")]
     {
+        use jaxson_llm::backends::{load_generator_and_embedder, LlamaConfig};
         if let Ok(path) = std::env::var("JAXSON_MODEL") {
-            match load_llama(std::path::Path::new(&path)) {
-                Ok(model) => return (model, format!("model: {path}")),
+            match load_generator_and_embedder(&LlamaConfig {
+                model_path: path.clone().into(),
+                ..Default::default()
+            }) {
+                Ok((generator, shared)) => {
+                    let embed_selected = std::env::var("JAXSON_EMBED_MODEL")
+                        .ok()
+                        .and_then(|m| resolve_model(models, &m));
+                    return Boot {
+                        model: Box::new(generator),
+                        embedder: active_embedder(models, embed_selected, &shared),
+                        status: format!("model: {path}"),
+                        base_embedder: Some(shared),
+                        embed_selected,
+                    };
+                }
                 Err(e) => eprintln!("Failed to load JAXSON_MODEL ({path}): {e}"),
             }
         }
     }
-    (Box::new(DemoModel), "demo brain".to_string())
+    Boot {
+        model: Box::new(DemoModel),
+        embedder: Box::new(HashEmbedder::default()),
+        status: "demo brain".to_string(),
+        #[cfg(feature = "llama")]
+        base_embedder: None,
+        #[cfg(feature = "llama")]
+        embed_selected: None,
+    }
 }
 
-/// Load a GGUF into a boxed generator (only with the `llama` feature).
+/// Build the active embedder: a dedicated model (its own weights) when one is selected,
+/// otherwise a cheap clone of the chat-model-shared embedder. A dedicated model that
+/// fails to load falls back to the chat model's embeddings.
 #[cfg(feature = "llama")]
-fn load_llama(path: &std::path::Path) -> Result<Box<dyn TextGenerator>, LlmError> {
-    use jaxson_llm::backends::{LlamaConfig, LlamaGenerator};
-    let model = LlamaGenerator::load(&LlamaConfig {
-        model_path: path.to_path_buf(),
-        ..Default::default()
-    })?;
-    Ok(Box::new(model))
+fn active_embedder(
+    models: &[OllamaModel],
+    embed_selected: Option<usize>,
+    base: &jaxson_llm::backends::LlamaEmbedder,
+) -> Box<dyn Embedder> {
+    use jaxson_llm::backends::{LlamaConfig, LlamaEmbedder};
+    match embed_selected {
+        Some(i) => match LlamaEmbedder::load(&LlamaConfig {
+            model_path: models[i].path.clone(),
+            // Memory snippets are short, so a small window keeps a dedicated embedder light.
+            n_ctx: 512,
+            ..Default::default()
+        }) {
+            Ok(dedicated) => Box::new(LlamaEmbed(dedicated)),
+            Err(e) => {
+                tracing::error!(model = %models[i].name, error = %e,
+                    "failed to load embedding model; falling back to chat model");
+                Box::new(LlamaEmbed(base.clone()))
+            }
+        },
+        None => Box::new(LlamaEmbed(base.clone())),
+    }
+}
+
+/// Find a discovered model by exact name, else by name prefix.
+#[cfg(feature = "llama")]
+fn resolve_model(models: &[OllamaModel], arg: &str) -> Option<usize> {
+    models
+        .iter()
+        .position(|m| m.name == arg)
+        .or_else(|| models.iter().position(|m| m.name.starts_with(arg)))
+}
+
+/// Adapts the fallible llama embedder to the agent's infallible [`Embedder`] seam: an
+/// embedding error degrades to an empty vector (retrieval just finds no match) rather
+/// than failing the turn.
+#[cfg(feature = "llama")]
+struct LlamaEmbed(jaxson_llm::backends::LlamaEmbedder);
+
+#[cfg(feature = "llama")]
+impl Embedder for LlamaEmbed {
+    fn embed(&self, text: &str) -> Vec<f32> {
+        match self.0.embed(text) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(error = %e, "embedding failed; using empty vector");
+                Vec::new()
+            }
+        }
+    }
 }
 
 struct JaxsonApp {
     agent: Agent,
     model: Box<dyn TextGenerator>,
-    embedder: HashEmbedder,
+    embedder: Box<dyn Embedder>,
+    // The embedder sharing the chat model's weights — reused when the embedding model is
+    // "same as chat", so toggling back doesn't reload. Only with a real model.
+    #[cfg(feature = "llama")]
+    base_embedder: Option<jaxson_llm::backends::LlamaEmbedder>,
+    // Which discovered model to embed with; `None` means "same as the chat model".
+    #[cfg(feature = "llama")]
+    embed_selected: Option<usize>,
     models: Vec<OllamaModel>,
     selected: Option<usize>,
     status: String,
@@ -111,7 +203,8 @@ impl JaxsonApp {
         let face_tex =
             cc.egui_ctx
                 .load_texture("jaxson-face", neutral, egui::TextureOptions::NEAREST);
-        let (model, status) = make_model();
+        let models = ollama::discover();
+        let boot = boot(&models);
         let template = select_template();
         // Load any previously persisted memory before the agent starts the session.
         let mut persist = persist::Persistence::open();
@@ -130,11 +223,15 @@ impl JaxsonApp {
                 },
                 ..Default::default()
             }),
-            model,
-            embedder: HashEmbedder::default(),
-            models: ollama::discover(),
+            model: boot.model,
+            embedder: boot.embedder,
+            #[cfg(feature = "llama")]
+            base_embedder: boot.base_embedder,
+            #[cfg(feature = "llama")]
+            embed_selected: boot.embed_selected,
+            models,
             selected: None,
-            status,
+            status: boot.status,
             transcript: vec![("Jaxson", "Hi! I'm Jaxson. What's your name?".to_string())],
             input: String::new(),
             start: Instant::now(),
@@ -250,15 +347,23 @@ impl JaxsonApp {
         let path = self.models[index].path.clone();
         #[cfg(feature = "llama")]
         {
-            match load_llama(&path) {
-                Ok(model) => {
-                    self.model = model;
+            use jaxson_llm::backends::{load_generator_and_embedder, LlamaConfig};
+            match load_generator_and_embedder(&LlamaConfig {
+                model_path: path.clone(),
+                ..Default::default()
+            }) {
+                Ok((generator, shared)) => {
+                    self.model = Box::new(generator);
+                    self.base_embedder = Some(shared);
                     // Match the chat format to the model so it doesn't emit garbled
                     // control tokens (e.g. llama3.1 needs the Llama-3 template).
                     self.agent.set_template(ChatTemplate::for_model_name(&name));
                     self.selected = Some(index);
                     self.status = format!("model: {name}");
                     tracing::info!(model = %name, "loaded model");
+                    // Rebuild the active embedder against the new chat model (reusing it
+                    // for "same as chat", or keeping the dedicated embedding model).
+                    self.apply_embed_selection();
                 }
                 Err(e) => {
                     tracing::error!(model = %name, error = %e, "failed to load model");
@@ -273,6 +378,29 @@ impl JaxsonApp {
         }
     }
 
+    /// Pick the embedding model (`None` = same as the chat model), then rebuild the
+    /// active embedder. Switching never reloads the chat model.
+    #[cfg(feature = "llama")]
+    fn select_embed(&mut self, sel: Option<usize>) {
+        self.embed_selected = sel;
+        self.apply_embed_selection();
+    }
+
+    /// Rebuild the active embedder from the current selection and the chat model's shared
+    /// embedder. Memories stored under a different embedder won't match this one's vector
+    /// space, but cosine handles that gracefully (no match, no crash).
+    #[cfg(feature = "llama")]
+    fn apply_embed_selection(&mut self) {
+        if let Some(base) = &self.base_embedder {
+            self.embedder = active_embedder(&self.models, self.embed_selected, base);
+            let label = self
+                .embed_selected
+                .map(|i| self.models[i].name.as_str())
+                .unwrap_or("same as chat");
+            tracing::info!(embed = %label, "embedder set");
+        }
+    }
+
     fn send(&mut self) {
         let input = std::mem::take(&mut self.input);
         let input = input.trim().to_string();
@@ -282,9 +410,9 @@ impl JaxsonApp {
         self.transcript.push(("You", input.clone()));
         self.turn += 1;
         let started = Instant::now();
-        let result = self
-            .agent
-            .respond(self.model.as_mut(), &self.embedder, self.turn, &input);
+        let result =
+            self.agent
+                .respond(self.model.as_mut(), self.embedder.as_ref(), self.turn, &input);
         let elapsed_ms = started.elapsed().as_millis();
         match result {
             Ok(turn) => {
@@ -346,6 +474,38 @@ impl eframe::App for JaxsonApp {
                     });
                 if let Some(i) = to_load {
                     self.load_selected(i);
+                }
+            });
+
+            // Embedding-model picker — defaults to the chat model, or a separate one
+            // (e.g. nomic-embed-text) for better/cheaper retrieval (F1.4b).
+            #[cfg(feature = "llama")]
+            ui.horizontal(|ui| {
+                let current = match self.embed_selected {
+                    Some(i) => self.models[i].name.as_str(),
+                    None => "(same as chat)",
+                };
+                let mut choice: Option<Option<usize>> = None;
+                egui::ComboBox::from_label("embed")
+                    .selected_text(current)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(self.embed_selected.is_none(), "(same as chat)")
+                            .clicked()
+                        {
+                            choice = Some(None);
+                        }
+                        for (i, model) in self.models.iter().enumerate() {
+                            if ui
+                                .selectable_label(self.embed_selected == Some(i), &model.name)
+                                .clicked()
+                            {
+                                choice = Some(Some(i));
+                            }
+                        }
+                    });
+                if let Some(sel) = choice {
+                    self.select_embed(sel);
                 }
             });
             ui.small(self.status.as_str());

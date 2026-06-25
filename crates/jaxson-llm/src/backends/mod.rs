@@ -13,7 +13,7 @@ pub use scripted::ScriptedGenerator;
 #[cfg(feature = "llama")]
 mod llama;
 #[cfg(feature = "llama")]
-pub use llama::{LlamaConfig, LlamaGenerator};
+pub use llama::{load_generator_and_embedder, LlamaConfig, LlamaEmbedder, LlamaGenerator};
 
 use crate::config::GenerationConfig;
 

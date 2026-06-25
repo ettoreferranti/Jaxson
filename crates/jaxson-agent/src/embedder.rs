@@ -1,9 +1,11 @@
 //! Turning text into an embedding vector.
 //!
 //! The agent needs embeddings to store and retrieve memories. The real implementation
-//! (F1.4b) will run the local model; [`HashEmbedder`] is a deterministic stand-in
-//! based on hashed word buckets — not semantic, but it makes the whole loop runnable
-//! and testable without a model, and identical/overlapping text retrieves itself.
+//! (F1.4b) runs the local model — `jaxson_llm::backends::LlamaEmbedder`, adapted to this
+//! seam in the app — producing semantic vectors. [`HashEmbedder`] is a deterministic
+//! stand-in based on hashed word buckets: not semantic, but it makes the whole loop
+//! runnable and testable without a model, and identical/overlapping text retrieves
+//! itself. The agent depends only on this trait, so the two are interchangeable.
 
 /// Produces an embedding vector for a piece of text.
 pub trait Embedder {
