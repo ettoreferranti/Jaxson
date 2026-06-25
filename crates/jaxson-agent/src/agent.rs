@@ -1,12 +1,15 @@
 use jaxson_affect::{action_sentiment, analyze, AffectEngine, Sentiment};
-use jaxson_core::{MoodVector, RelationshipEvent, RelationshipState};
+use jaxson_core::{MoodVector, RelationshipEvent, RelationshipState, TopicAffinities};
 use jaxson_extract::Extractor;
 use jaxson_llm::{assemble, ChatTemplate, GenerationConfig, Message, TextGenerator};
-use jaxson_memory::{retrieve, MemoryGraph, MemoryId, RetrievalParams};
+use jaxson_memory::{retrieve, MemoryGraph, MemoryId, MemoryKind, RetrievalParams};
 
 use crate::curiosity;
 use crate::embedder::Embedder;
 use crate::error::AgentError;
+
+/// Affinity at or above this is strong enough that Jaxson will eagerly bring the topic up.
+const FAVORITE_THRESHOLD: f64 = 0.5;
 
 /// Tuning for the conversation loop.
 #[derive(Debug, Clone)]
@@ -56,6 +59,7 @@ pub struct Turn {
 pub struct Agent {
     persona: String,
     state: RelationshipState,
+    affinities: TopicAffinities,
     graph: MemoryGraph,
     history: Vec<Message>,
     extractor: Extractor,
@@ -74,6 +78,7 @@ impl Agent {
         Agent {
             persona: persona.into(),
             state: RelationshipState::INITIAL,
+            affinities: TopicAffinities::new(),
             graph,
             history: Vec::new(),
             extractor: Extractor::default(),
@@ -90,6 +95,11 @@ impl Agent {
 
     pub fn state(&self) -> &RelationshipState {
         &self.state
+    }
+
+    /// Per-topic affinities learned this session (F1.5).
+    pub fn affinities(&self) -> &TopicAffinities {
+        &self.affinities
     }
 
     pub fn graph(&self) -> &MemoryGraph {
@@ -167,7 +177,8 @@ impl Agent {
         self.history.push(Message::assistant(reply.clone()));
 
         // Learn from the latest exchange.
-        let learned = self.learn(model, embedder, now)?;
+        let learned_nodes = self.learn(model, embedder, now)?;
+        let learned = learned_nodes.len();
 
         // Familiarity grows with each fact learned.
         for _ in 0..learned {
@@ -187,6 +198,10 @@ impl Agent {
             fraction: self.affect.responsiveness,
         });
 
+        // Per-topic affinity (F1.5): how the user feels about specific subjects, nudged by
+        // this turn's sentiment.
+        self.update_affinities(user_input, &learned_nodes, sentiment.valence);
+
         tracing::debug!(
             familiarity = self.state.familiarity(),
             trust = self.state.trust(),
@@ -203,14 +218,15 @@ impl Agent {
         })
     }
 
-    /// Extract memories from the recent window and merge them (with embeddings) into
-    /// the graph. Returns how many nodes were learned.
+    /// Extract memories from the recent window and merge them (with embeddings) into the
+    /// graph. Returns the `(kind, content)` of each newly learned node (deduped ones are
+    /// omitted), so the caller can both count them and update topic affinities.
     fn learn(
         &mut self,
         model: &mut dyn TextGenerator,
         embedder: &dyn Embedder,
         now: i64,
-    ) -> Result<usize, AgentError> {
+    ) -> Result<Vec<(MemoryKind, String)>, AgentError> {
         // Extraction is best-effort: a model that returns malformed/empty JSON simply
         // means nothing was learned this turn, not a failed turn — but we log why, since
         // a silently-failing extractor is exactly what made "no memories" hard to debug.
@@ -221,7 +237,7 @@ impl Agent {
             Ok(extraction) => extraction,
             Err(e) => {
                 tracing::warn!(error = %e, "memory extraction failed; nothing learned this turn");
-                return Ok(0);
+                return Ok(Vec::new());
             }
         };
         let (nodes, edges) = match extraction.into_graph(
@@ -232,24 +248,52 @@ impl Agent {
             Ok(graph) => graph,
             Err(e) => {
                 tracing::warn!(error = %e, "extracted memories could not form a graph; nothing learned");
-                return Ok(0);
+                return Ok(Vec::new());
             }
         };
-        let mut learned = 0;
+        let mut learned = Vec::new();
         for node in nodes {
             // Don't store a memory we already have (dedup by content).
             if self.graph.contains_content(&node.content) {
                 continue;
             }
+            let learned_node = (node.kind, node.content.clone());
             let embedding = embedder.embed(&node.content);
             self.graph.insert_node(node.with_embedding(embedding));
-            learned += 1;
+            learned.push(learned_node);
         }
         for edge in edges {
             // Ignore edges whose endpoints aren't present (e.g. a deduped node).
             let _ = self.graph.insert_edge(edge);
         }
         Ok(learned)
+    }
+
+    /// Update topic affinities from a turn: newly learned **preferences** are subjects the
+    /// user has a feeling about, and any already-known topic named in the input is
+    /// reinforced too — both nudged by the turn's sentiment `valence` (`[-1, 1]`).
+    fn update_affinities(
+        &mut self,
+        user_input: &str,
+        learned_nodes: &[(MemoryKind, String)],
+        valence: f64,
+    ) {
+        for (kind, content) in learned_nodes {
+            if *kind == MemoryKind::Preference {
+                self.affinities.reinforce(content, valence);
+            }
+        }
+        // Reinforce existing topics the user brought up again (so feelings build over time).
+        let lower = user_input.to_lowercase();
+        let mentioned: Vec<String> = self
+            .affinities
+            .iter()
+            .filter(|(topic, _)| lower.contains(topic))
+            .map(|(topic, _)| topic.to_string())
+            .collect();
+        for topic in mentioned {
+            self.affinities.reinforce(&topic, valence);
+        }
     }
 
     /// Persona plus state-driven behavior hints. Proactive curiosity (when and what to
@@ -259,6 +303,13 @@ impl Agent {
         if let Some(hint) = curiosity::proactive_hint(&self.state, &self.graph) {
             prompt.push_str("\n\n");
             prompt.push_str(&hint);
+        }
+        // Affinity (F1.5): if the user clearly loves a topic, encourage Jaxson to bring it
+        // up — that's the "affinity influences what Jaxson brings up" behavior.
+        if let Some((topic, _)) = self.affinities.favorite(FAVORITE_THRESHOLD) {
+            prompt.push_str(&format!(
+                "\n\nYour owner is a big fan of {topic} — bring it up and gush about it when it fits!"
+            ));
         }
         prompt
     }
@@ -318,6 +369,72 @@ mod tests {
         format!(
             r#"{{"memories":[{{"kind":"fact","content":"{content}","confidence":0.9}}],"relations":[]}}"#
         )
+    }
+
+    fn extraction_pref(content: &str) -> String {
+        format!(
+            r#"{{"memories":[{{"kind":"preference","content":"{content}","confidence":0.9}}],"relations":[]}}"#
+        )
+    }
+
+    #[test]
+    fn a_liked_preference_gains_positive_affinity() {
+        let mut model = ScriptedGenerator::new(["yay", &extraction_pref("hiking")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        agent
+            .respond(&mut model, &embedder, 0, "I absolutely love hiking!")
+            .unwrap();
+        assert!(agent.affinities().get("hiking") > 0.0);
+    }
+
+    #[test]
+    fn a_disliked_preference_gains_negative_affinity() {
+        let mut model = ScriptedGenerator::new(["aw", &extraction_pref("mornings")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        agent
+            .respond(
+                &mut model,
+                &embedder,
+                0,
+                "Ugh, I hate mornings, they're terrible.",
+            )
+            .unwrap();
+        assert!(agent.affinities().get("mornings") < 0.0);
+    }
+
+    #[test]
+    fn non_preference_memories_do_not_create_affinity() {
+        // A learned *fact* (not a preference) shouldn't, on its own, become a topic.
+        let mut model = ScriptedGenerator::new(["ok", &extraction_json("user is a developer")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+        agent
+            .respond(&mut model, &embedder, 0, "I work as a developer")
+            .unwrap();
+        assert!(agent.affinities().is_empty());
+    }
+
+    #[test]
+    fn a_strongly_liked_topic_gets_surfaced_in_the_prompt() {
+        let embedder = HashEmbedder::default();
+        let mut replies = Vec::new();
+        for _ in 0..10 {
+            replies.push("woo".to_string());
+            replies.push(extraction_pref("hiking"));
+        }
+        let mut model = ScriptedGenerator::new(replies);
+        let mut agent = Agent::new("persona");
+        assert!(!agent.system_prompt().contains("big fan of hiking"));
+        for i in 0..10 {
+            agent
+                .respond(&mut model, &embedder, i, "I love hiking so much!")
+                .unwrap();
+        }
+        // Affinity has crossed the favorite threshold, so Jaxson is told to bring it up.
+        assert!(agent.affinities().get("hiking") >= 0.5);
+        assert!(agent.system_prompt().contains("big fan of hiking"));
     }
 
     #[test]

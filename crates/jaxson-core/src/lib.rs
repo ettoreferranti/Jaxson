@@ -7,8 +7,10 @@
 //! Jaxson's behavior is deterministic and testable — which is exactly why the
 //! agent's "algorithms" live here rather than in the LLM.
 
+mod affinity;
 mod mood;
 mod relationship;
 
+pub use affinity::TopicAffinities;
 pub use mood::{Emotion, MoodVector};
 pub use relationship::{RelationshipEvent, RelationshipState};

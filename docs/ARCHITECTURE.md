@@ -52,7 +52,7 @@ macOS app crate (added in v0.1) depends on them.
 
 | Crate | Responsibility | UI-free? | Status |
 | ----- | -------------- | -------- | ------ |
-| `jaxson-core` | Shared value types: `MoodVector`, `Emotion`, `RelationshipState`, IDs, errors | ✅ | **seeded** |
+| `jaxson-core` | Shared value types + state machine: `MoodVector`, `Emotion`, `RelationshipState`, per-topic `TopicAffinities` (F1.5), IDs, errors | ✅ | **seeded (F1.5)** |
 | `jaxson-memory` | Memory graph (typed/weighted nodes + edges), hybrid retrieval (cosine + graph spread), `MemoryStore` trait + in-memory store; encrypted SQLite (SQLCipher) persistence behind the `sqlite` feature | ✅ (pure) / SQLCipher (feature) | **built (F1.2, F1.4)** |
 | `jaxson-affect` | Affect engine: relationship state + (lexicon) sentiment → target `MoodVector`; smoothing via the state machine | ✅ | **built (F1.6)** |
 | `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend (`LlamaGenerator` + `LlamaEmbedder`, sharing one loaded model) behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1, F1.4b)** |
@@ -95,12 +95,14 @@ the authoritative, validated model; a `MemoryStore` gives it **snapshot** durabi
   `relatedTo`, `happenedOn`, `causes`). Weights decay/strengthen over time.
 
 ### 4.2 State variables
-Derived, persisted scalars that summarize the relationship and gate behavior:
-- `trust ∈ [0,1]`, `familiarity ∈ [0,1]`, per-topic `affinity ∈ [-1,1]`, and a
-  current `MoodVector`.
+Derived scalars that summarize the relationship and gate behavior:
+- `trust ∈ [0,1]`, `familiarity ∈ [0,1]` and a current `MoodVector` on
+  `RelationshipState`, plus per-topic `affinity ∈ [-1,1]` in `TopicAffinities`
+  (F1.5 — kept separate because it's a heap map, so `RelationshipState` stays `Copy`).
 - Memories and interactions emit **events** that mutate these variables through
   clamped, well-tested transition functions. This is the "state machine" — state is
-  a pure function of the event history, making it deterministic and testable.
+  a pure function of the event history, making it deterministic and testable. Affinity
+  reinforcement uses the same diminishing-returns-toward-the-bound shape as trust.
 
 ### 4.3 Behavior gating (examples)
 - `familiarity` low → orchestrator biases toward asking onboarding questions
@@ -110,7 +112,10 @@ Derived, persisted scalars that summarize the relationship and gate behavior:
   leads every turn, acquainted gently nudges remaining gaps, familiar-with-no-gaps just
   converses.
 - `trust` below a threshold → sensitive topics stay locked.
-- `affinity` per topic → influences what Jaxson brings up and the baseline mood.
+- `affinity` per topic (F1.5) → a strongly-liked topic (≥ 0.5) is surfaced in the system
+  prompt so Jaxson eagerly brings it up. Affinity is nudged each turn by the sentiment of
+  what the user says: learned **preferences** and any already-known topic named in the
+  input. (Per-session for now — like trust/familiarity, not yet persisted.)
 
 ### 4.4 Retrieval (`retrieve`, F1.4)
 Hybrid and pure: **cosine similarity** over node embeddings seeds the relevant nodes,
