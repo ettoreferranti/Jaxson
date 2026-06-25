@@ -22,7 +22,9 @@ use jaxson_llm::ollama::{self, OllamaModel};
 use jaxson_llm::{ChatTemplate, GenerationConfig, LlmError, TextGenerator};
 use jaxson_memory::{MemoryId, MemoryKind, MemoryNode};
 
-const PERSONA: &str = "You are Jaxson, a warm, curious companion getting to know its owner.";
+/// Jaxson's character lives in `jaxson-agent` (single source of truth, shared with the
+/// `persona_probe` tuning example).
+const PERSONA: &str = jaxson_agent::DEFAULT_PERSONA;
 const FACE_PIXELS: usize = 250;
 
 /// A stand-in "model" for the UI: returns empty extractions and a canned chat reply,

@@ -32,42 +32,41 @@ struct Topic {
 const CURRICULUM: &[Topic] = &[
     Topic {
         kind: MemoryKind::Person,
-        about: "who they are and the important people in their life",
+        about: "who they are and who matters most to them",
     },
     Topic {
         kind: MemoryKind::Preference,
-        about: "the things they like and dislike",
+        about: "the stuff they love and the stuff they can't stand",
     },
     Topic {
         kind: MemoryKind::Event,
-        about: "what's been going on in their life lately",
+        about: "what they've been up to lately",
     },
     Topic {
         kind: MemoryKind::Fact,
-        about: "a detail about their everyday life",
+        about: "some fun little detail about their everyday life",
     },
 ];
 
 /// Lead-in used while Jaxson barely knows the user (onboarding tier).
-const LEAD: &str = "You're still getting to know this person.";
+const LEAD: &str = "You barely know this human yet, and you're itching to find out more!";
 /// Lead-in used once acquainted but still curious (gaps remain).
-const CASUAL: &str = "There's still more to learn about them.";
+const CASUAL: &str = "You still want to get to know your human better.";
 
 /// A system-prompt fragment nudging Jaxson to ask a question this turn, or `None` to just
-/// converse. See the module docs for the familiarity tiers.
+/// converse. See the module docs for the familiarity tiers. The phrasing stays playful so
+/// Jaxson sounds like an excited robot pal, not an interviewer.
 pub(crate) fn proactive_hint(state: &RelationshipState, graph: &MemoryGraph) -> Option<String> {
     let gap = first_gap(graph);
     if state.should_prioritize_onboarding() {
         Some(match gap {
-            Some(topic) => format!("{LEAD} Warmly ask them about {}.", topic.about),
-            None => {
-                format!("{LEAD} Warmly ask a friendly question to learn something new about them.")
-            }
+            Some(topic) => format!("{LEAD} Excitedly ask them about {}.", topic.about),
+            None => format!("{LEAD} Ask them something fun to get to know them better."),
         })
     } else {
         gap.map(|topic| {
             format!(
-                "{CASUAL} When it feels natural, gently ask about {}.",
+                "{CASUAL} When it fits the chat, playfully ask about {}.",
                 topic.about
             )
         })
@@ -129,25 +128,20 @@ mod tests {
     fn fresh_agent_leads_with_a_person_question() {
         let hint = proactive_hint(&onboarding(), &graph_with(&[])).unwrap();
         assert!(hint.starts_with(LEAD));
-        assert!(hint.contains("important people")); // Person — first in the curriculum
+        assert!(hint.contains("matters most")); // Person — first in the curriculum
     }
 
     #[test]
     fn onboarding_advances_to_the_next_gap_once_a_topic_is_covered() {
         // Person is known, so the first gap is now Preference.
         let hint = proactive_hint(&onboarding(), &graph_with(&[MemoryKind::Person])).unwrap();
-        assert!(hint.contains("like and dislike"));
-        assert!(!hint.contains("important people"));
+        assert!(hint.contains("can't stand"));
+        assert!(!hint.contains("matters most"));
     }
 
     #[test]
     fn curriculum_is_ordered_person_preference_event_fact() {
-        let expect = [
-            "important people",
-            "like and dislike",
-            "going on in their life",
-            "everyday life",
-        ];
+        let expect = ["matters most", "can't stand", "been up to", "everyday life"];
         // Covering the first `i` topics reveals topic `i` as the next gap.
         for i in 0..ALL_TOPICS.len() {
             let hint = proactive_hint(&onboarding(), &graph_with(&ALL_TOPICS[..i])).unwrap();
@@ -159,15 +153,15 @@ mod tests {
     fn onboarding_with_all_topics_covered_still_asks_generically() {
         let hint = proactive_hint(&onboarding(), &graph_with(&ALL_TOPICS)).unwrap();
         assert!(hint.starts_with(LEAD));
-        assert!(hint.contains("learn something new"));
+        assert!(hint.contains("something fun"));
     }
 
     #[test]
     fn acquainted_drops_the_lead_but_still_nudges_a_remaining_gap() {
         let hint = proactive_hint(&acquainted(), &graph_with(&[])).unwrap();
         assert!(hint.starts_with(CASUAL));
-        assert!(hint.contains("gently ask"));
-        assert!(hint.contains("important people"));
+        assert!(hint.contains("playfully ask"));
+        assert!(hint.contains("matters most"));
     }
 
     #[test]
@@ -180,6 +174,6 @@ mod tests {
         // Only an Episode is known → Person is still the first gap (we never ask about
         // episodes), so onboarding still leads with the Person question.
         let hint = proactive_hint(&onboarding(), &graph_with(&[MemoryKind::Episode])).unwrap();
-        assert!(hint.contains("important people"));
+        assert!(hint.contains("matters most"));
     }
 }

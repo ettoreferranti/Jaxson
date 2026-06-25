@@ -340,8 +340,8 @@ mod tests {
         let agent = Agent::new("You are Jaxson.");
         assert!(agent.graph().is_empty());
         assert_eq!(agent.state().familiarity(), 0.0);
-        // A brand-new Jaxson leads with a warm getting-to-know-you question.
-        assert!(agent.system_prompt().contains("Warmly ask"));
+        // A brand-new Jaxson leads with an eager getting-to-know-you question.
+        assert!(agent.system_prompt().contains("Excitedly ask"));
     }
 
     #[test]
@@ -492,18 +492,18 @@ mod tests {
         let mut model = ScriptedGenerator::new(replies);
         let mut agent = Agent::new("You are Jaxson.");
 
-        // Fresh: leads every turn with a warm onboarding question.
-        assert!(agent.system_prompt().contains("Warmly ask"));
+        // Fresh: leads every turn with an eager onboarding question.
+        assert!(agent.system_prompt().contains("Excitedly ask"));
         for i in 0..10 {
             agent
                 .respond(&mut model, &embedder, i, "tell me more")
                 .unwrap();
         }
         // Now acquainted; the lead is gone. Only Fact memories were learned, so other
-        // topics remain open and Jaxson stays gently curious rather than going silent.
+        // topics remain open and Jaxson stays playfully curious rather than going silent.
         assert!(agent.state().familiarity() > RelationshipState::ONBOARDING_FAMILIARITY_THRESHOLD);
         let prompt = agent.system_prompt();
-        assert!(!prompt.contains("Warmly ask"));
-        assert!(prompt.contains("gently ask"));
+        assert!(!prompt.contains("Excitedly ask"));
+        assert!(prompt.contains("playfully ask"));
     }
 }
