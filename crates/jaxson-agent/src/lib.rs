@@ -34,7 +34,9 @@ mod agent;
 mod curiosity;
 mod embedder;
 mod error;
+mod persona;
 
 pub use agent::{Agent, AgentConfig, Turn};
 pub use embedder::{Embedder, HashEmbedder};
 pub use error::AgentError;
+pub use persona::DEFAULT_PERSONA;
