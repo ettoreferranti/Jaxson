@@ -60,9 +60,11 @@ To run on the **real local model** (instead of the mock demo brain), build with
 `--features llama` and point `JAXSON_MODEL` at a GGUF; `JAXSON_TEMPLATE` (chatml/llama3/
 plain) picks the chat format. See the README's "Use the real local model" section.
 Validate a model in isolation first with the headless `jaxson-llm` examples:
-`cargo run -p jaxson-llm --example llama_chat --features llama -- <model.gguf>` (chat), and
+`cargo run -p jaxson-llm --example llama_chat --features llama -- <model.gguf>` (chat),
 `cargo run -p jaxson-llm --example embed_probe --features llama -- <model-name>` (embeddings
-— prints the vector dimension and confirms related sentences score higher than unrelated).
+— prints the vector dimension and confirms related sentences score higher than unrelated),
+and `cargo run --release -p jaxson-llm --example latency_bench --features llama -- [models…]`
+(F1.1c — time-to-first-token + tokens/sec vs the NFR-3 < 1.5 s target; use `--release`).
 
 The **embedding model is separate from the chat model** (F1.4b). By default Jaxson embeds
 with the chat model's own weights ("same as chat", no extra load), but the in-app `embed`
