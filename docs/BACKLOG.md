@@ -53,8 +53,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   or reuses the chat model's weights ("same as chat", no extra load). `embed_probe` example
   verifies related text scores higher than unrelated. Populates node embeddings + query
   embeddings for F1.4 retrieval.
-- [ ] **F1.5** State machine (extend `jaxson-core`): per-topic affinity + richer
-  transitions with clamped functions (heavy unit + mutation tests).
+- [x] **F1.5** State machine extended (`jaxson-core::TopicAffinities`): per-topic affinity
+  in `[-1,1]` with clamped, diminishing-returns reinforcement + decay + favorite query
+  (pure, 100% mutation-graded). Wired into the agent — learned preferences and re-mentioned
+  topics are nudged by each turn's sentiment, and a strongly-liked topic gets surfaced in
+  the system prompt so Jaxson brings it up (agent stays 0-missed).
 - [x] **F1.6** `jaxson-affect` engine v1: relationship state + lexicon sentiment →
   target `MoodVector`, smoothed via the state machine; wired into the agent so mood
   moves with the conversation (Neutral→Happy on warm input). Lexicon analyzer is a
