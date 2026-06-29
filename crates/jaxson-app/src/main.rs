@@ -199,6 +199,32 @@ impl Embedder for LlamaEmbed {
     }
 }
 
+/// A live microphone capture (push-to-talk): a cpal input stream filling a shared buffer
+/// until it's stopped. Dropping it stops the stream.
+#[cfg(feature = "whisper")]
+struct Recorder {
+    _stream: cpal::Stream,
+    buffer: std::sync::Arc<std::sync::Mutex<Vec<f32>>>,
+    sample_rate: u32,
+    channels: u16,
+}
+
+/// Load the whisper speech-to-text model from `$JAXSON_WHISPER_MODEL`, if set and loadable.
+#[cfg(feature = "whisper")]
+fn load_stt() -> Option<Box<dyn jaxson_perception::SpeechToText>> {
+    let path = std::env::var("JAXSON_WHISPER_MODEL").ok()?;
+    match jaxson_perception::backends::WhisperStt::load(&path) {
+        Ok(stt) => {
+            tracing::info!(model = %path, "loaded whisper model");
+            Some(Box::new(stt))
+        }
+        Err(e) => {
+            tracing::error!(model = %path, error = %e, "failed to load whisper model");
+            None
+        }
+    }
+}
+
 struct JaxsonApp {
     agent: Agent,
     model: Box<dyn TextGenerator>,
@@ -221,6 +247,13 @@ struct JaxsonApp {
     // Encrypted on-disk memory (Keychain-keyed); ephemeral without `--features sqlite`.
     persist: persist::Persistence,
     export_status: String,
+    // Voice input (push-to-talk); only with `--features whisper`.
+    #[cfg(feature = "whisper")]
+    stt: Option<Box<dyn jaxson_perception::SpeechToText>>,
+    #[cfg(feature = "whisper")]
+    recorder: Option<Recorder>,
+    #[cfg(feature = "whisper")]
+    mic_status: String,
     // Memory inspector state.
     show_memories: bool,
     mem_search: String,
@@ -272,6 +305,12 @@ impl JaxsonApp {
             face_tex,
             persist,
             export_status: String::new(),
+            #[cfg(feature = "whisper")]
+            stt: load_stt(),
+            #[cfg(feature = "whisper")]
+            recorder: None,
+            #[cfg(feature = "whisper")]
+            mic_status: String::new(),
             show_memories: false,
             mem_search: String::new(),
             editing: None,
@@ -434,6 +473,105 @@ impl JaxsonApp {
         }
     }
 
+    /// Push-to-talk toggle: start recording, or stop and transcribe what was captured.
+    #[cfg(feature = "whisper")]
+    fn toggle_recording(&mut self) {
+        if self.recorder.is_some() {
+            self.stop_and_transcribe();
+        } else if let Err(e) = self.start_recording() {
+            tracing::error!(error = %e, "could not start recording");
+            self.mic_status = format!("mic error: {e}");
+        }
+    }
+
+    /// Open the default microphone and stream samples into a shared buffer until stopped.
+    #[cfg(feature = "whisper")]
+    fn start_recording(&mut self) -> Result<(), String> {
+        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+
+        let device = cpal::default_host()
+            .default_input_device()
+            .ok_or("no microphone found")?;
+        let config = device
+            .default_input_config()
+            .map_err(|e| e.to_string())?;
+        let sample_rate = config.sample_rate().0;
+        let channels = config.channels();
+        let buffer = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
+        let sink = buffer.clone();
+        let stream_config: cpal::StreamConfig = config.clone().into();
+        let err_fn = |e| tracing::error!(error = %e, "audio input stream error");
+
+        // Append incoming samples (as f32) to the buffer on the audio thread.
+        let stream = match config.sample_format() {
+            cpal::SampleFormat::F32 => device.build_input_stream(
+                &stream_config,
+                move |data: &[f32], _: &_| sink.lock().unwrap().extend_from_slice(data),
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::I16 => device.build_input_stream(
+                &stream_config,
+                move |data: &[i16], _: &_| {
+                    sink.lock()
+                        .unwrap()
+                        .extend(data.iter().map(|s| *s as f32 / 32768.0));
+                },
+                err_fn,
+                None,
+            ),
+            other => return Err(format!("unsupported mic sample format: {other:?}")),
+        }
+        .map_err(|e| e.to_string())?;
+        stream.play().map_err(|e| e.to_string())?;
+
+        self.recorder = Some(Recorder {
+            _stream: stream,
+            buffer,
+            sample_rate,
+            channels,
+        });
+        self.mic_status = "🔴 recording… (click again to stop)".to_string();
+        Ok(())
+    }
+
+    /// Stop recording, convert the captured audio to 16 kHz mono, transcribe it, and send
+    /// the text as the user's turn.
+    #[cfg(feature = "whisper")]
+    fn stop_and_transcribe(&mut self) {
+        use jaxson_perception::{downmix_stereo, Audio, WHISPER_SAMPLE_RATE};
+
+        let Some(rec) = self.recorder.take() else {
+            return;
+        };
+        let raw = std::mem::take(&mut *rec.buffer.lock().unwrap());
+        let (sample_rate, channels) = (rec.sample_rate, rec.channels);
+        drop(rec); // stops the stream
+
+        // Collapse to mono (downmix stereo, or take the first of >2 channels), then resample.
+        let mono = match channels {
+            1 => Audio::new(raw, sample_rate),
+            2 => downmix_stereo(&raw, sample_rate),
+            n => Audio::new(raw.iter().step_by(n as usize).copied().collect(), sample_rate),
+        };
+        let audio = mono.resample_to(WHISPER_SAMPLE_RATE);
+
+        let result = self.stt.as_mut().map(|stt| stt.transcribe(&audio));
+        match result {
+            Some(Ok(t)) if !t.is_empty() => {
+                self.mic_status.clear();
+                self.input = t.text;
+                self.send();
+            }
+            Some(Ok(_)) => self.mic_status = "(didn't catch that — try again)".to_string(),
+            Some(Err(e)) => {
+                tracing::error!(error = %e, "transcription failed");
+                self.mic_status = format!("transcription error: {e}");
+            }
+            None => {}
+        }
+    }
+
     fn send(&mut self) {
         let input = std::mem::take(&mut self.input);
         let input = input.trim().to_string();
@@ -570,6 +708,15 @@ impl eframe::App for JaxsonApp {
             ui.separator();
 
             ui.horizontal(|ui| {
+                // Push-to-talk mic (whisper feature, model loaded): click to record, again
+                // to stop + transcribe + send.
+                #[cfg(feature = "whisper")]
+                if self.stt.is_some() {
+                    let label = if self.recorder.is_some() { "⏹" } else { "🎤" };
+                    if ui.button(label).on_hover_text("Push to talk").clicked() {
+                        self.toggle_recording();
+                    }
+                }
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.input)
                         .desired_width(f32::INFINITY)
@@ -586,6 +733,10 @@ impl eframe::App for JaxsonApp {
                     ui.memory_mut(|m| m.request_focus(response.id));
                 }
             });
+            #[cfg(feature = "whisper")]
+            if !self.mic_status.is_empty() {
+                ui.small(self.mic_status.as_str());
+            }
 
             ui.horizontal(|ui| {
                 let label = format!("🧠 Memories ({})", self.agent.graph().node_count());

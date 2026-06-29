@@ -58,6 +58,16 @@ cargo run -p jaxson-perception --example whisper_transcribe --features whisper -
 Like the model, the native backend isn't built in CI — the pure layer (mutation-graded)
 is. Models (`*.bin`) and audio are git-ignored.
 
+**Push-to-talk in the app (F2.1b):** build the app with `--features whisper` and set
+`JAXSON_WHISPER_MODEL` to a whisper model; a 🎤 button appears next to the chat input.
+Click it to record from the default mic, click again to stop — the audio is down-mixed,
+resampled to 16 kHz, transcribed, and sent as your turn.
+
+```bash
+JAXSON_MODEL=llama3.1 JAXSON_WHISPER_MODEL=/path/to/ggml-base.en.bin \
+  cargo run --manifest-path crates/jaxson-app/Cargo.toml --features sqlite,llama,whisper
+```
+
 ## The desktop app (`jaxson-app`)
 
 The egui GUI lives in `crates/jaxson-app` but is **excluded from the Cargo workspace**

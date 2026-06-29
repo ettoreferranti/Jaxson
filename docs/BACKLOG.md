@@ -114,9 +114,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   `MockStt` (mutation-graded), and a whisper.cpp (Metal) backend behind the `whisper`
   feature with a `whisper_transcribe` example. Verified end-to-end (ggml-tiny.en on a `say`
   clip → correct transcript). Live mic capture + push-to-talk UI is the follow-up (F2.1b).
-- [ ] **F2.1b** Microphone capture + push-to-talk in the app: record from the mic (cpal),
-  feed the audio to `SpeechToText`, and send the transcript as the user's turn. (Native
-  audio I/O — built where it can be run on macOS.)
+- [x] **F2.1b** Microphone capture + push-to-talk in the app (behind `jaxson-app`'s
+  `whisper` feature): a 🎤 button records via `cpal`, then stop → downmix to mono →
+  `Audio::resample_to(16 kHz)` (new pure, mutation-graded resampler) → `SpeechToText` →
+  the transcript is sent as the user's turn. STT model from `$JAXSON_WHISPER_MODEL`.
+  Compile-verified both feature sets; the live audio path is run on macOS by the owner.
 - [ ] **F2.2** Local TTS with a child-friendly voice (resolve OQ-1).
 - [ ] **F2.3** Voice-driven face: lip/mouth sync to TTS, listening cues in the eyes.
 - [ ] **F2.4** `jaxson-safety`: output content filter + topic guardrails (FR-S1/S2).

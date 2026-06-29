@@ -59,6 +59,36 @@ impl Audio {
             .unwrap_or(start);
         Audio::new(self.samples[start..=end].to_vec(), self.sample_rate)
     }
+
+    /// Resample to `target_rate` by linear interpolation — microphones usually capture at
+    /// 44.1/48 kHz, but whisper wants [`WHISPER_SAMPLE_RATE`]. Linear interpolation is
+    /// cheap and good enough for speech (whisper is robust to the mild aliasing); a
+    /// higher-quality resampler can replace this later. A no-op when already at the target
+    /// rate (or for empty/zero-rate input).
+    pub fn resample_to(&self, target_rate: u32) -> Audio {
+        // Without both rates there's nothing meaningful to do — keep the samples as-is.
+        if target_rate == 0 || self.sample_rate == 0 {
+            return self.clone();
+        }
+        // Fewer than two samples: nothing to interpolate between (and same-rate input
+        // falls out of the general path unchanged, so it needs no special case).
+        if self.samples.len() < 2 {
+            return Audio::new(self.samples.clone(), target_rate);
+        }
+        let ratio = target_rate as f64 / self.sample_rate as f64;
+        let out_len = ((self.samples.len() as f64) * ratio).round() as usize;
+        let last = self.samples.len() - 1;
+        let mut out = Vec::with_capacity(out_len);
+        for i in 0..out_len {
+            // Where this output sample falls in the source timeline.
+            let src_pos = i as f64 / ratio;
+            let left = (src_pos.floor() as usize).min(last);
+            let right = (left + 1).min(last);
+            let frac = (src_pos - left as f64) as f32;
+            out.push(self.samples[left] + (self.samples[right] - self.samples[left]) * frac);
+        }
+        Audio::new(out, target_rate)
+    }
 }
 
 /// Down-mix interleaved stereo (`L, R, L, R, …`) to mono by averaging each L/R pair. A
@@ -160,5 +190,67 @@ mod tests {
     #[test]
     fn downmix_of_empty_is_empty() {
         assert!(downmix_stereo(&[], 48_000).samples.is_empty());
+    }
+
+    #[test]
+    fn resample_to_same_rate_is_a_noop() {
+        let audio = Audio::new(vec![0.1, 0.2, 0.3], 16_000);
+        assert_eq!(audio.resample_to(16_000), audio);
+    }
+
+    #[test]
+    fn resample_downsamples_length_by_the_ratio() {
+        // 48 kHz → 16 kHz is a 1/3 ratio: 9 samples → 3.
+        let audio = Audio::new(vec![0.0; 9], 48_000);
+        let out = audio.resample_to(16_000);
+        assert_eq!(out.sample_rate, 16_000);
+        assert_eq!(out.samples.len(), 3);
+    }
+
+    #[test]
+    fn resample_upsamples_and_interpolates_between_points() {
+        // 1 kHz → 2 kHz doubles the count; the inserted samples interpolate linearly.
+        let audio = Audio::new(vec![0.0, 1.0], 1_000);
+        let out = audio.resample_to(2_000);
+        assert_eq!(out.samples.len(), 4);
+        // src positions: 0, 0.5, 1.0, 1.5 → 0.0, 0.5, 1.0, 1.0 (clamped at the end).
+        assert!(approx(out.samples[0], 0.0));
+        assert!(approx(out.samples[1], 0.5));
+        assert!(approx(out.samples[2], 1.0));
+    }
+
+    #[test]
+    fn resample_interpolation_is_exact_between_nonzero_points() {
+        // [0, 2, 6] @ 1 kHz → 2 kHz. Output src positions: 0, .5, 1, 1.5, 2, 2.5.
+        let out = Audio::new(vec![0.0, 2.0, 6.0], 1_000).resample_to(2_000);
+        assert_eq!(out.samples.len(), 6);
+        assert!(approx(out.samples[1], 1.0)); // between 0 and 2 at 0.5
+        assert!(approx(out.samples[2], 2.0)); // exactly sample 1
+                                              // between samples 1 (=2) and 2 (=6) at frac 0.5 → 2 + (6-2)*0.5 = 4.
+                                              // Pins both the interpolation subtraction and the fractional offset.
+        assert!(approx(out.samples[3], 4.0));
+    }
+
+    #[test]
+    fn resample_of_too_few_samples_just_relabels_the_rate() {
+        // Empty and single-sample inputs have nothing to interpolate.
+        assert_eq!(
+            Audio::new(Vec::new(), 48_000).resample_to(16_000),
+            Audio::new(Vec::new(), 16_000)
+        );
+        assert_eq!(
+            Audio::new(vec![0.5], 48_000).resample_to(16_000),
+            Audio::new(vec![0.5], 16_000)
+        );
+    }
+
+    #[test]
+    fn resample_with_a_zero_rate_keeps_the_original() {
+        // Zero target rate → unchanged (can't target nothing).
+        let a = Audio::new(vec![0.1, 0.2], 48_000);
+        assert_eq!(a.resample_to(0), a);
+        // Zero source rate → unchanged (don't divide by it).
+        let b = Audio::new(vec![0.1, 0.2], 0);
+        assert_eq!(b.resample_to(16_000), b);
     }
 }
