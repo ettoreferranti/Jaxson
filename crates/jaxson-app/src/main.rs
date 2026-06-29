@@ -402,6 +402,9 @@ impl JaxsonApp {
         });
         let mood = agent.mood();
         let memory_count = agent.graph().node_count();
+        // A first-meeting intro, or a warm welcome-back (by name when remembered) for a
+        // returning user — computed before the agent moves into the brain.
+        let greeting = agent.opening_greeting();
         // Spoken replies (piper feature): load the voice, and only open the output device
         // if a voice actually loaded.
         #[cfg(feature = "piper")]
@@ -428,7 +431,7 @@ impl JaxsonApp {
             models,
             selected: boot.selected,
             status: boot.status,
-            transcript: vec![("Jaxson", "Hi! I'm Jaxson. What's your name?".to_string())],
+            transcript: vec![("Jaxson", greeting)],
             input: String::new(),
             start: Instant::now(),
             turn: 0,

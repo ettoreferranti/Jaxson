@@ -34,6 +34,7 @@ mod agent;
 mod curiosity;
 mod embedder;
 mod error;
+mod greeting;
 mod persona;
 
 pub use agent::{Agent, AgentConfig, Turn};
