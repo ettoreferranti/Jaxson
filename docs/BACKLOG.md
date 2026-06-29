@@ -82,10 +82,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   short-term context (`Agent::clear_history`) while keeping long-term memory. Agent also
   gained `respond_streaming` (live token callback, tested + 0-missed) — the seam a future
   non-blocking UI builds on.
-- [ ] **F1.9b** Non-blocking / streaming chat UI: run generation on a background worker so
-  the window doesn't freeze during a real-model turn, streaming tokens live via
-  `Agent::respond_streaming`. (Deferred from F1.9 — a focused concurrency change, best done
-  where it can be run on macOS.)
+- [x] **F1.9b** Non-blocking / streaming chat UI: generation runs on a background worker
+  thread (agent + model + embedder bundled into a `Send` `Brain` that's handed to the
+  worker and back), so the window stays live — the face keeps animating and the reply
+  streams in via `Agent::respond_streaming` instead of beach-balling. Controls (send,
+  pickers, mic, inspector) are disabled for the brief in-flight window. Compile + clippy
+  clean on all feature sets; runtime verified on macOS.
 - [x] **F1.10** Memory inspector: a window to browse / search / edit / delete memories
   (deleting a node also drops its edges). `MemoryGraph::search` + `remove_edge` (pure,
   tested); `Agent::graph_mut` for curation; egui inspector in the app.
