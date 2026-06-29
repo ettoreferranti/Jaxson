@@ -1,6 +1,6 @@
 [package]
 name = "jaxson-perception"
-description = "Local speech perception: a SpeechToText seam + pure audio utilities, with a whisper.cpp (Metal) backend behind the `whisper` feature."
+description = "Local speech: SpeechToText + TextToSpeech seams + pure audio utilities, with a whisper.cpp (Metal) STT backend (`whisper` feature) and a Piper neural TTS backend (`piper` feature)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,10 +12,15 @@ default = []
 # toolchain at BUILD time and a local whisper model (GGML/GGUF) at RUNTIME. Not built in
 # CI — see docs/DEVELOPMENT.md. Off by default so the pure seam stays light and graded.
 whisper = ["dep:whisper-rs"]
+# Native Piper neural TTS (piper-rs: VITS over ONNX Runtime + compiled espeak-ng). Needs a
+# C/C++ toolchain at BUILD time and a local Piper voice (`*.onnx` + `*.onnx.json`) at
+# RUNTIME. Cross-platform (no Metal lock-in). Not built in CI; off by default.
+piper = ["dep:piper-rs"]
 
 [dependencies]
 thiserror = { workspace = true }
 whisper-rs = { version = "0.16", optional = true }
+piper-rs = { version = "0.2", optional = true }
 
 [dev-dependencies]
 # Read WAV files in the `whisper_transcribe` example.

@@ -121,7 +121,15 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   `Audio::resample_to(16 kHz)` (new pure, mutation-graded resampler) → `SpeechToText` →
   the transcript is sent as the user's turn. STT model from `$JAXSON_WHISPER_MODEL`.
   Compile-verified both feature sets; the live audio path is run on macOS by the owner.
-- [ ] **F2.2** Local TTS with a child-friendly voice (resolve OQ-1).
+- [x] **F2.2** Local TTS (`jaxson-perception`), mirroring the STT split: pure `TextToSpeech`
+  seam + `speakable_text` (strips `*action*` cues so they aren't read aloud) + deterministic
+  `MockTts` (mutation-graded), and a **Piper** neural-TTS backend (`piper-rs`: VITS over ONNX
+  Runtime + espeak-ng) behind the `piper` feature with a `piper_speak` example. Resolves OQ-1
+  in favor of Piper (cross-platform, portable to the future hardware bot; the portable seam
+  leaves room for a macOS `say` backend later). Spoken-replies wiring into the app is the
+  follow-up **F2.2b**.
+- [ ] **F2.2b** Speak replies in the app: play `TextToSpeech` audio (cpal) behind a `piper`
+  feature, with a child-friendly voice picked via `$JAXSON_PIPER_VOICE`.
 - [ ] **F2.3** Voice-driven face: lip/mouth sync to TTS, listening cues in the eyes.
 - [ ] **F2.4** `jaxson-safety`: output content filter + topic guardrails (FR-S1/S2).
 - [ ] **F2.5** Parental-control mode (authenticated): review history/memories, tune

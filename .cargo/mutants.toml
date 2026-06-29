@@ -16,6 +16,7 @@ exclude_globs = [
     "crates/jaxson-llm/src/backends/llama.rs",
     "crates/jaxson-memory/src/sqlite.rs",
     "crates/jaxson-perception/src/backends/whisper.rs",
+    "crates/jaxson-perception/src/backends/piper.rs",
     # Rendering: pixel-drawing arithmetic, validated by property tests + visual ASCII
     # inspection (see raster_demo). The pure face *geometry* stays mutation-graded.
     "crates/jaxson-face/src/raster.rs",
