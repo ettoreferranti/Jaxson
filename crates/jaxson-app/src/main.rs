@@ -815,38 +815,50 @@ impl JaxsonApp {
         let ctx = self.egui_ctx.clone();
         std::thread::spawn(move || {
             let started = Instant::now();
+            // Take the synthesizer out of the brain so `on_reply` can borrow it without
+            // colliding with the `&mut brain.agent` the turn needs; restored afterwards.
+            #[cfg(feature = "piper")]
+            let mut tts = brain.tts.take();
             let result = {
                 // Stream raw token pieces back to the UI as they're produced.
                 let mut on_token = |piece: &str| {
                     let _ = tx.send(TurnUpdate::Token(piece.to_string()));
                     ctx.request_repaint();
                 };
-                brain.agent.respond_streaming(
+                // The reply is ready *before* memory extraction (a second model pass that
+                // can take many seconds). Synthesize + send it to the player here so speech
+                // starts right after the text, not after extraction. Sentence by sentence,
+                // so playback begins on the first short sentence. `split_sentences` /
+                // `synthesize` strip `*action*` cues so they aren't read aloud.
+                let mut on_reply = |_reply: &str| {
+                    #[cfg(feature = "piper")]
+                    if let Some(tts) = tts.as_mut() {
+                        for sentence in jaxson_perception::split_sentences(_reply) {
+                            match tts.synthesize(&sentence) {
+                                Ok(audio) if !audio.samples.is_empty() => {
+                                    let _ = tx.send(TurnUpdate::Speak(audio));
+                                    ctx.request_repaint();
+                                }
+                                Ok(_) => {}
+                                Err(e) => tracing::error!(error = %e, "speech synthesis failed"),
+                            }
+                        }
+                    }
+                };
+                brain.agent.respond_streaming_with_reply(
                     brain.model.as_mut(),
                     brain.embedder.as_ref(),
                     now,
                     &input,
                     &mut on_token,
+                    &mut on_reply,
                 )
             };
-            tracing::info!(elapsed_ms = started.elapsed().as_millis(), "turn complete");
-            // Speak the reply sentence by sentence (still on this worker thread): playback
-            // can start after the first short sentence instead of waiting for the whole
-            // paragraph to synthesize, and each chunk gets a natural pause at its boundary.
-            // `split_sentences`/`synthesize` strip `*action*` cues so they aren't read aloud.
             #[cfg(feature = "piper")]
-            if let (Some(tts), Ok(turn)) = (brain.tts.as_mut(), &result) {
-                for sentence in jaxson_perception::split_sentences(&turn.reply) {
-                    match tts.synthesize(&sentence) {
-                        Ok(audio) if !audio.samples.is_empty() => {
-                            let _ = tx.send(TurnUpdate::Speak(audio));
-                            ctx.request_repaint();
-                        }
-                        Ok(_) => {}
-                        Err(e) => tracing::error!(error = %e, "speech synthesis failed"),
-                    }
-                }
+            {
+                brain.tts = tts;
             }
+            tracing::info!(elapsed_ms = started.elapsed().as_millis(), "turn complete");
             let _ = tx.send(TurnUpdate::Done(
                 Box::new(brain),
                 result.map_err(|e| e.to_string()),

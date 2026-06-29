@@ -137,7 +137,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   with a natural pause at each boundary. Pace is slowed for a calmer, kid-friendly delivery
   via Piper's `length_scale` (`PiperTts::with_length_scale`; default 1.2, override with
   `$JAXSON_PIPER_LENGTH_SCALE`). Voice from `$JAXSON_PIPER_VOICE`; degrades to silent (never
-  fatal) with no voice or output device. Compile + clippy verified for default / `piper` /
+  fatal) with no voice or output device. Crucially, synthesis runs the moment the reply is
+  ready — **before** the memory-extraction pass (a second model call) — via the agent's
+  `respond_streaming_with_reply` `on_reply` hook, so speech starts right after the text
+  instead of waiting out extraction. Compile + clippy verified for default / `piper` /
   `whisper,piper`; live audio run on macOS by the owner.
 - [x] **F2.3** Voice-driven face: the mouth lip-syncs to the playing reply and the eyes
   show a listening cue. Pure, mutation-graded layer: `jaxson-face`'s `Activity`
