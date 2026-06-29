@@ -3,8 +3,9 @@
 //! Encrypted-at-rest via SQLCipher (`jaxson-memory`'s `sqlite` feature). The encryption
 //! key lives in the **macOS Keychain** — generated on first run, fetched thereafter — so
 //! the on-disk DB is unreadable without the logged-in user's Keychain (ADR A7 /
-//! docs/PRIVACY-SECURITY.md). Without the `sqlite` feature the app still runs, just
-//! ephemerally: memory lives in RAM and is lost on quit.
+//! docs/PRIVACY-SECURITY.md). For development, `$JAXSON_DB_KEY` supplies the key directly
+//! and skips the Keychain prompt (see [`db_key`]). Without the `sqlite` feature the app
+//! still runs, just ephemerally: memory lives in RAM and is lost on quit.
 //!
 //! Failures here are never fatal — they degrade to an ephemeral session and surface a
 //! message through [`Persistence::status`] so the UI can show it.
@@ -132,9 +133,33 @@ fn open_store() -> Result<(jaxson_memory::SqliteStore, std::path::PathBuf), Stri
     let dir = data_dir().ok_or("no data directory")?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("memory.jaxsondb");
-    let key = keychain_key()?;
+    let key = db_key()?;
     let store = jaxson_memory::SqliteStore::open(&path, &key).map_err(|e| e.to_string())?;
     Ok((store, path))
+}
+
+/// Environment variable that supplies the DB key directly, bypassing the Keychain.
+#[cfg(feature = "sqlite")]
+const KEY_ENV: &str = "JAXSON_DB_KEY";
+
+/// The DB encryption key. In development, set `$JAXSON_DB_KEY` to supply the key directly
+/// and skip the Keychain — macOS re-prompts for Keychain access on every launch of an
+/// unsigned `cargo build` binary (its identity changes each rebuild), which is tedious
+/// while iterating. The DB stays encrypted either way; this only changes where the key
+/// comes from. **Don't** set it for a real install: a key in the environment is far weaker
+/// than one sealed in the Keychain (see docs/PRIVACY-SECURITY.md). Otherwise the key is
+/// fetched from the Keychain (generated on first run).
+#[cfg(feature = "sqlite")]
+fn db_key() -> Result<String, String> {
+    match std::env::var(KEY_ENV) {
+        Ok(key) if !key.is_empty() => {
+            tracing::warn!(
+                "using DB key from ${KEY_ENV} (Keychain bypassed) — dev only, not for a real install"
+            );
+            Ok(key)
+        }
+        _ => keychain_key(),
+    }
 }
 
 /// Fetch the DB encryption key from the Keychain, generating and storing a fresh random
