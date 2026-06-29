@@ -100,9 +100,12 @@ The long-term goal is a physical bot; the near-term goal is a polished macOS app
 
 ## 6. Open questions
 
-- OQ-1: Which TTS engine gives the best on-device child-friendly voice from Rust?
+- OQ-1: ~~Which TTS engine gives the best on-device child-friendly voice from Rust?
   (Candidates: Piper via bindings, a small local neural TTS, or shelling out to macOS
-  `say`/AVSpeech via FFI.) — to revisit at v0.2.
+  `say`/AVSpeech via FFI.) — to revisit at v0.2.~~ **Resolved (F2.2):** **Piper** (`piper-rs`
+  — VITS over ONNX Runtime + espeak-ng) behind `jaxson-perception`'s `piper` feature. Picked
+  for cross-platform portability to the future hardware bot (NFR-6/E1); the `TextToSpeech`
+  seam keeps the choice swappable, leaving room for a macOS `say` backend later.
 - OQ-2: ~~Exact quantization (4-bit vs 8-bit) and model pick — benchmark at v0.1.~~
   **Resolved (F1.1c):** an ~8B 4-bit (Q4) GGUF comfortably clears NFR-3 on Apple Silicon.
   Benchmarked on an M4 Pro (`latency_bench`): `llama3.1:8b` first-token 192 ms / 47.6 tok/s,
