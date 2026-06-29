@@ -7,6 +7,7 @@
 //!
 //! Run: `cargo run --manifest-path crates/jaxson-app/Cargo.toml`
 
+use std::sync::mpsc;
 use std::time::Instant;
 
 use eframe::egui;
@@ -15,7 +16,7 @@ use egui::Color32;
 mod logging;
 mod persist;
 
-use jaxson_agent::{Agent, AgentConfig, Embedder, HashEmbedder};
+use jaxson_agent::{Agent, AgentConfig, Embedder, HashEmbedder, Turn};
 use jaxson_core::MoodVector;
 use jaxson_face::{face, rasterize, Bitmap};
 use jaxson_llm::ollama::{self, OllamaModel};
@@ -65,8 +66,9 @@ fn select_template() -> ChatTemplate {
 /// selection from `$JAXSON_EMBED_MODEL`. `selected`/`template` are set when the chat model
 /// was resolved by name (so the picker reflects it and the chat format matches).
 struct Boot {
-    model: Box<dyn TextGenerator>,
-    embedder: Box<dyn Embedder>,
+    // `+ Send` so the brain can move to the generation worker thread (F1.9b).
+    model: Box<dyn TextGenerator + Send>,
+    embedder: Box<dyn Embedder + Send>,
     status: String,
     /// The discovered-model index the chat model resolved to (by name), if any.
     selected: Option<usize>,
@@ -151,7 +153,7 @@ fn active_embedder(
     models: &[OllamaModel],
     embed_selected: Option<usize>,
     base: &jaxson_llm::backends::LlamaEmbedder,
-) -> Box<dyn Embedder> {
+) -> Box<dyn Embedder + Send> {
     use jaxson_llm::backends::{LlamaConfig, LlamaEmbedder};
     match embed_selected {
         Some(i) => match LlamaEmbedder::load(&LlamaConfig {
@@ -225,10 +227,35 @@ fn load_stt() -> Option<Box<dyn jaxson_perception::SpeechToText>> {
     }
 }
 
-struct JaxsonApp {
+/// The agent, model, and embedder bundled together so a turn can be handed to a worker
+/// thread and handed back when done (F1.9b — keeps the window responsive while the model
+/// generates). All three are `Send`.
+struct Brain {
     agent: Agent,
-    model: Box<dyn TextGenerator>,
-    embedder: Box<dyn Embedder>,
+    model: Box<dyn TextGenerator + Send>,
+    embedder: Box<dyn Embedder + Send>,
+}
+
+/// Messages the generation worker streams back to the UI thread.
+enum TurnUpdate {
+    /// A raw token piece, as the reply is generated.
+    Token(String),
+    /// The turn finished: the brain comes back (to be reinstalled) plus the result.
+    Done(Box<Brain>, Result<Turn, String>),
+}
+
+struct JaxsonApp {
+    /// The brain when idle; `None` while a turn is running on the worker thread.
+    brain: Option<Brain>,
+    /// Receiver for the in-flight turn's streamed tokens + completion.
+    pending: Option<mpsc::Receiver<TurnUpdate>>,
+    /// Accumulated raw reply text shown live while generating.
+    streaming: String,
+    /// A clone of the egui context, so the worker can wake the UI as tokens arrive.
+    egui_ctx: egui::Context,
+    /// Cached for display while the brain is away on the worker thread.
+    mood: MoodVector,
+    memory_count: usize,
     // The embedder sharing the chat model's weights — reused when the embedding model is
     // "same as chat", so toggling back doesn't reload. Only with a real model.
     #[cfg(feature = "llama")]
@@ -275,22 +302,28 @@ impl JaxsonApp {
         // Load any previously persisted memory before the agent starts the session.
         let mut persist = persist::Persistence::open();
         let graph = persist.load();
-        JaxsonApp {
-            agent: Agent::with_graph(PERSONA, graph).with_config(AgentConfig {
-                template,
-                // Stop generation at the template's end-of-turn token.
-                gen_config: GenerationConfig {
-                    stop: template
-                        .stop_tokens()
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect(),
-                    ..Default::default()
-                },
+        let agent = Agent::with_graph(PERSONA, graph).with_config(AgentConfig {
+            template,
+            // Stop generation at the template's end-of-turn token.
+            gen_config: GenerationConfig {
+                stop: template.stop_tokens().iter().map(|s| s.to_string()).collect(),
                 ..Default::default()
+            },
+            ..Default::default()
+        });
+        let mood = agent.mood();
+        let memory_count = agent.graph().node_count();
+        JaxsonApp {
+            brain: Some(Brain {
+                agent,
+                model: boot.model,
+                embedder: boot.embedder,
             }),
-            model: boot.model,
-            embedder: boot.embedder,
+            pending: None,
+            streaming: String::new(),
+            egui_ctx: cc.egui_ctx.clone(),
+            mood,
+            memory_count,
             #[cfg(feature = "llama")]
             base_embedder: boot.base_embedder,
             #[cfg(feature = "llama")]
@@ -323,8 +356,13 @@ impl JaxsonApp {
         if !self.show_memories {
             return;
         }
+        // The graph lives in the brain; while a turn is generating it's away on the
+        // worker, so the inspector is unavailable for that brief window.
+        let Some(brain) = self.brain.as_mut() else {
+            return;
+        };
         // Snapshot the (filtered) memories as owned data so we can mutate the graph after.
-        let items: Vec<(MemoryId, String, MemoryKind, f32)> = self
+        let items: Vec<(MemoryId, String, MemoryKind, f32)> = brain
             .agent
             .graph()
             .search(&self.mem_search)
@@ -386,30 +424,31 @@ impl JaxsonApp {
 
         let changed = to_delete.is_some() || to_save.is_some();
         if let Some(id) = to_delete {
-            self.agent.graph_mut().remove_node(id);
+            brain.agent.graph_mut().remove_node(id);
             if self.editing == Some(id) {
                 self.editing = None;
             }
         }
         if let Some((id, new_content)) = to_save {
             // Rebuild the node with the new content and a fresh embedding.
-            let fields = self
+            let fields = brain
                 .agent
                 .graph()
                 .node(id)
                 .map(|n| (n.kind, n.created_at, n.provenance, n.confidence));
             if let Some((kind, created_at, provenance, confidence)) = fields {
-                let embedding = self.embedder.embed(&new_content);
+                let embedding = brain.embedder.embed(&new_content);
                 let updated =
                     MemoryNode::new(id, kind, new_content, created_at, provenance, confidence)
                         .with_embedding(embedding);
-                self.agent.graph_mut().insert_node(updated);
+                brain.agent.graph_mut().insert_node(updated);
             }
             self.editing = None;
         }
         // Curation edits change what Jaxson knows — persist them immediately.
         if changed {
-            self.persist.save(self.agent.graph());
+            self.memory_count = brain.agent.graph().node_count();
+            self.persist.save(brain.agent.graph());
         }
     }
 
@@ -425,11 +464,15 @@ impl JaxsonApp {
                 ..Default::default()
             }) {
                 Ok((generator, shared)) => {
-                    self.model = Box::new(generator);
+                    if let Some(brain) = self.brain.as_mut() {
+                        brain.model = Box::new(generator);
+                        // Match the chat format to the model so it doesn't emit garbled
+                        // control tokens (e.g. llama3.1 needs the Llama-3 template).
+                        brain.agent.set_template(ChatTemplate::for_model_name(&name));
+                    } else {
+                        return; // a turn is generating; the picker is disabled anyway
+                    }
                     self.base_embedder = Some(shared);
-                    // Match the chat format to the model so it doesn't emit garbled
-                    // control tokens (e.g. llama3.1 needs the Llama-3 template).
-                    self.agent.set_template(ChatTemplate::for_model_name(&name));
                     self.selected = Some(index);
                     self.status = format!("model: {name}");
                     tracing::info!(model = %name, "loaded model");
@@ -463,14 +506,20 @@ impl JaxsonApp {
     /// space, but cosine handles that gracefully (no match, no crash).
     #[cfg(feature = "llama")]
     fn apply_embed_selection(&mut self) {
-        if let Some(base) = &self.base_embedder {
-            self.embedder = active_embedder(&self.models, self.embed_selected, base);
-            let label = self
-                .embed_selected
-                .map(|i| self.models[i].name.as_str())
-                .unwrap_or("same as chat");
-            tracing::info!(embed = %label, "embedder set");
+        // Clone the shared embedder (a cheap Arc bump) so we don't hold a borrow of
+        // `base_embedder` while also mutably borrowing `brain`.
+        let Some(base) = self.base_embedder.clone() else {
+            return;
+        };
+        let embedder = active_embedder(&self.models, self.embed_selected, &base);
+        if let Some(brain) = self.brain.as_mut() {
+            brain.embedder = embedder;
         }
+        let label = self
+            .embed_selected
+            .map(|i| self.models[i].name.as_str())
+            .unwrap_or("same as chat");
+        tracing::info!(embed = %label, "embedder set");
     }
 
     /// Push-to-talk toggle: start recording, or stop and transcribe what was captured.
@@ -572,45 +621,107 @@ impl JaxsonApp {
         }
     }
 
+    /// Dispatch a turn: hand the brain to a worker thread that generates the reply
+    /// (streaming tokens back), so the UI thread stays responsive. The brain comes back
+    /// via the channel when the turn finishes (see [`poll_turn`](Self::poll_turn)). A no-op
+    /// if the input is blank or a turn is already running.
     fn send(&mut self) {
         let input = std::mem::take(&mut self.input);
         let input = input.trim().to_string();
         if input.is_empty() {
             return;
         }
+        let Some(mut brain) = self.brain.take() else {
+            self.input = input; // busy — keep the text for when we're free
+            return;
+        };
         self.transcript.push(("You", input.clone()));
         self.turn += 1;
-        let started = Instant::now();
-        let result =
-            self.agent
-                .respond(self.model.as_mut(), self.embedder.as_ref(), self.turn, &input);
-        let elapsed_ms = started.elapsed().as_millis();
+        let now = self.turn;
+        self.streaming.clear();
+
+        let (tx, rx) = mpsc::channel::<TurnUpdate>();
+        self.pending = Some(rx);
+        let ctx = self.egui_ctx.clone();
+        std::thread::spawn(move || {
+            let started = Instant::now();
+            let result = {
+                // Stream raw token pieces back to the UI as they're produced.
+                let mut on_token = |piece: &str| {
+                    let _ = tx.send(TurnUpdate::Token(piece.to_string()));
+                    ctx.request_repaint();
+                };
+                brain.agent.respond_streaming(
+                    brain.model.as_mut(),
+                    brain.embedder.as_ref(),
+                    now,
+                    &input,
+                    &mut on_token,
+                )
+            };
+            tracing::info!(elapsed_ms = started.elapsed().as_millis(), "turn complete");
+            let _ = tx.send(TurnUpdate::Done(Box::new(brain), result.map_err(|e| e.to_string())));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Drain the worker channel: accumulate streamed tokens, and when the turn finishes,
+    /// reinstall the brain, record the reply, and persist.
+    fn poll_turn(&mut self) {
+        let mut done: Option<(Box<Brain>, Result<Turn, String>)> = None;
+        if let Some(rx) = &self.pending {
+            loop {
+                match rx.try_recv() {
+                    Ok(TurnUpdate::Token(piece)) => self.streaming.push_str(&piece),
+                    Ok(TurnUpdate::Done(brain, result)) => {
+                        done = Some((brain, result));
+                        break;
+                    }
+                    Err(_) => break, // nothing more this frame (or worker gone)
+                }
+            }
+        }
+        let Some((brain, result)) = done else {
+            return;
+        };
+        self.brain = Some(*brain);
+        self.pending = None;
+        self.streaming.clear();
         match result {
             Ok(turn) => {
-                tracing::info!(
-                    elapsed_ms,
-                    learned = turn.learned,
-                    retrieved = turn.retrieved,
-                    reply_chars = turn.reply.chars().count(),
-                    "reply generated"
-                );
+                tracing::info!(learned = turn.learned, retrieved = turn.retrieved, "reply ready");
                 self.transcript.push(("Jaxson", turn.reply));
             }
             Err(e) => {
-                tracing::error!(elapsed_ms, error = %e, "turn failed");
+                tracing::error!(error = %e, "turn failed");
                 self.transcript.push(("Jaxson", format!("(error: {e})")));
             }
         }
-        // The turn may have learned new memories — persist the updated graph.
-        self.persist.save(self.agent.graph());
+        if let Some(brain) = &self.brain {
+            self.mood = brain.agent.mood();
+            self.memory_count = brain.agent.graph().node_count();
+            // The turn may have learned new memories — persist the updated graph.
+            self.persist.save(brain.agent.graph());
+        }
+    }
+
+    /// Whether a turn is currently generating (the brain is away on the worker thread).
+    fn is_busy(&self) -> bool {
+        self.brain.is_none()
     }
 }
 
 impl eframe::App for JaxsonApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Refresh the face every frame so it animates (blink/gaze) and reflects mood.
+        // Pull in any streamed tokens / completion from the generation worker.
+        self.poll_turn();
+        let busy = self.is_busy();
+
+        // Refresh the face every frame so it animates (blink/gaze) and reflects mood. The
+        // mood is cached (updated when a turn finishes), so the face keeps moving even
+        // while the brain is away on the worker thread.
         let t = self.start.elapsed().as_secs_f64();
-        let bitmap = rasterize(&face(self.agent.mood(), t), FACE_PIXELS);
+        let bitmap = rasterize(&face(self.mood, t), FACE_PIXELS);
         self.face_tex
             .set(to_image(&bitmap), egui::TextureOptions::NEAREST);
 
@@ -621,7 +732,7 @@ impl eframe::App for JaxsonApp {
                     self.face_tex.id(),
                     egui::vec2(250.0, 250.0),
                 ));
-                ui.label(format!("mood: {:?}", self.agent.mood().dominant_emotion()));
+                ui.label(format!("mood: {:?}", self.mood.dominant_emotion()));
             });
 
             // Model picker — Ollama models, plus the built-in demo brain.
@@ -631,18 +742,20 @@ impl eframe::App for JaxsonApp {
                     None => "demo brain",
                 };
                 let mut to_load = None;
-                egui::ComboBox::from_label("model")
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        for (i, model) in self.models.iter().enumerate() {
-                            if ui
-                                .selectable_label(self.selected == Some(i), &model.name)
-                                .clicked()
-                            {
-                                to_load = Some(i);
+                ui.add_enabled_ui(!busy, |ui| {
+                    egui::ComboBox::from_label("model")
+                        .selected_text(current)
+                        .show_ui(ui, |ui| {
+                            for (i, model) in self.models.iter().enumerate() {
+                                if ui
+                                    .selectable_label(self.selected == Some(i), &model.name)
+                                    .clicked()
+                                {
+                                    to_load = Some(i);
+                                }
                             }
-                        }
-                    });
+                        });
+                });
                 if let Some(i) = to_load {
                     self.load_selected(i);
                 }
@@ -657,24 +770,26 @@ impl eframe::App for JaxsonApp {
                     None => "(same as chat)",
                 };
                 let mut choice: Option<Option<usize>> = None;
-                egui::ComboBox::from_label("embed")
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        if ui
-                            .selectable_label(self.embed_selected.is_none(), "(same as chat)")
-                            .clicked()
-                        {
-                            choice = Some(None);
-                        }
-                        for (i, model) in self.models.iter().enumerate() {
+                ui.add_enabled_ui(!busy, |ui| {
+                    egui::ComboBox::from_label("embed")
+                        .selected_text(current)
+                        .show_ui(ui, |ui| {
                             if ui
-                                .selectable_label(self.embed_selected == Some(i), &model.name)
+                                .selectable_label(self.embed_selected.is_none(), "(same as chat)")
                                 .clicked()
                             {
-                                choice = Some(Some(i));
+                                choice = Some(None);
                             }
-                        }
-                    });
+                            for (i, model) in self.models.iter().enumerate() {
+                                if ui
+                                    .selectable_label(self.embed_selected == Some(i), &model.name)
+                                    .clicked()
+                                {
+                                    choice = Some(Some(i));
+                                }
+                            }
+                        });
+                });
                 if let Some(sel) = choice {
                     self.select_embed(sel);
                 }
@@ -703,6 +818,21 @@ impl eframe::App for JaxsonApp {
                         });
                         ui.add_space(4.0);
                     }
+                    // While a turn runs, show the reply streaming in (or "thinking…" before
+                    // the first token).
+                    if self.pending.is_some() {
+                        let green = Color32::from_rgb(0x8f, 0xe3, 0x88);
+                        let preview = if self.streaming.is_empty() {
+                            "💭 thinking…"
+                        } else {
+                            self.streaming.as_str()
+                        };
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            ui.colored_label(green, egui::RichText::new("Jaxson:").strong());
+                            ui.label(preview);
+                        });
+                    }
                 });
 
             ui.separator();
@@ -713,7 +843,11 @@ impl eframe::App for JaxsonApp {
                 #[cfg(feature = "whisper")]
                 if self.stt.is_some() {
                     let label = if self.recorder.is_some() { "⏹" } else { "🎤" };
-                    if ui.button(label).on_hover_text("Push to talk").clicked() {
+                    if ui
+                        .add_enabled(!busy, egui::Button::new(label))
+                        .on_hover_text("Push to talk")
+                        .clicked()
+                    {
                         self.toggle_recording();
                     }
                 }
@@ -724,7 +858,8 @@ impl eframe::App for JaxsonApp {
                 );
                 let entered =
                     response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                let can_send = !self.input.trim().is_empty();
+                // Can't send while a turn is still generating.
+                let can_send = !busy && !self.input.trim().is_empty();
                 let clicked = ui
                     .add_enabled(can_send, egui::Button::new("Send"))
                     .clicked();
@@ -739,23 +874,33 @@ impl eframe::App for JaxsonApp {
             }
 
             ui.horizontal(|ui| {
-                let label = format!("🧠 Memories ({})", self.agent.graph().node_count());
+                let label = format!("🧠 Memories ({})", self.memory_count);
                 if ui.button(label).clicked() {
                     self.show_memories = !self.show_memories;
                 }
                 // Clear the visible chat and the model's short-term context — long-term
-                // memory (the graph) is kept.
-                if ui.button("🧹 Clear chat").clicked() {
-                    self.agent.clear_history();
+                // memory (the graph) is kept. (Disabled while a turn is generating.)
+                if ui
+                    .add_enabled(!busy, egui::Button::new("🧹 Clear chat"))
+                    .clicked()
+                {
+                    if let Some(brain) = self.brain.as_mut() {
+                        brain.agent.clear_history();
+                    }
                     self.transcript =
                         vec![("Jaxson", "Fresh start! What's on your mind?".to_string())];
                 }
                 // Debug dump: the DB is encrypted, so this is the readable view.
-                if ui.button("⬇ Export JSON").clicked() {
-                    self.export_status = match persist::export_json(self.agent.graph()) {
-                        Ok(path) => format!("exported to {}", path.display()),
-                        Err(e) => format!("export failed: {e}"),
-                    };
+                if ui
+                    .add_enabled(!busy, egui::Button::new("⬇ Export JSON"))
+                    .clicked()
+                {
+                    if let Some(brain) = self.brain.as_ref() {
+                        self.export_status = match persist::export_json(brain.agent.graph()) {
+                            Ok(path) => format!("exported to {}", path.display()),
+                            Err(e) => format!("export failed: {e}"),
+                        };
+                    }
                 }
             });
             ui.small(self.persist.status());
