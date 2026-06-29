@@ -128,8 +128,17 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   in favor of Piper (cross-platform, portable to the future hardware bot; the portable seam
   leaves room for a macOS `say` backend later). Spoken-replies wiring into the app is the
   follow-up **F2.2b**.
-- [ ] **F2.2b** Speak replies in the app: play `TextToSpeech` audio (cpal) behind a `piper`
-  feature, with a child-friendly voice picked via `$JAXSON_PIPER_VOICE`.
+- [x] **F2.2b** Speak replies in the app (behind `jaxson-app`'s `piper` feature): the reply
+  is synthesized on the **generation worker thread** (the `TextToSpeech` is bundled into the
+  `Brain` alongside the model/embedder, F1.9b-style, so the window stays responsive) and
+  played on the UI thread via `rodio` (resamples + maps to the output device). Synthesis is
+  **per-sentence** (pure, mutation-graded `split_sentences`): each sentence is spoken as it's
+  ready, so playback starts after the first short sentence instead of the whole paragraph,
+  with a natural pause at each boundary. Pace is slowed for a calmer, kid-friendly delivery
+  via Piper's `length_scale` (`PiperTts::with_length_scale`; default 1.2, override with
+  `$JAXSON_PIPER_LENGTH_SCALE`). Voice from `$JAXSON_PIPER_VOICE`; degrades to silent (never
+  fatal) with no voice or output device. Compile + clippy verified for default / `piper` /
+  `whisper,piper`; live audio run on macOS by the owner.
 - [ ] **F2.3** Voice-driven face: lip/mouth sync to TTS, listening cues in the eyes.
 - [ ] **F2.4** `jaxson-safety`: output content filter + topic guardrails (FR-S1/S2).
 - [ ] **F2.5** Parental-control mode (authenticated): review history/memories, tune

@@ -23,6 +23,7 @@ use crate::tts::{speakable_text, TextToSpeech};
 pub struct PiperTts {
     piper: Piper,
     speaker_id: Option<i64>,
+    length_scale: Option<f32>,
 }
 
 impl PiperTts {
@@ -48,12 +49,21 @@ impl PiperTts {
         Ok(PiperTts {
             piper,
             speaker_id: None,
+            length_scale: None,
         })
     }
 
     /// Select a speaker for multi-speaker voices; `None` (the default) uses speaker 0.
     pub fn with_speaker(mut self, speaker_id: Option<i64>) -> Self {
         self.speaker_id = speaker_id;
+        self
+    }
+
+    /// Override the speaking pace. `length_scale` stretches each phoneme's duration:
+    /// `> 1.0` slows speech down (calmer, clearer), `< 1.0` speeds it up. `None` (the
+    /// default) uses the voice's own configured value.
+    pub fn with_length_scale(mut self, length_scale: Option<f32>) -> Self {
+        self.length_scale = length_scale;
         self
     }
 }
@@ -68,7 +78,14 @@ impl TextToSpeech for PiperTts {
         }
         let (samples, sample_rate) = self
             .piper
-            .create(&spoken, false, self.speaker_id, None, None, None)
+            .create(
+                &spoken,
+                false,
+                self.speaker_id,
+                self.length_scale,
+                None,
+                None,
+            )
             .map_err(|e| PerceptionError::Backend(e.to_string()))?;
         Ok(Audio::new(samples, sample_rate))
     }

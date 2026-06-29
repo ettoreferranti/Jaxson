@@ -143,6 +143,13 @@ impl Agent {
         self.state.mood()
     }
 
+    /// The line to open a session with: a first-meeting introduction when Jaxson knows
+    /// nothing yet, or a warm welcome-back (by name when it remembers one) for a returning
+    /// user — so it doesn't re-ask a friend their name every time.
+    pub fn opening_greeting(&self) -> String {
+        crate::greeting::opening_greeting(&self.graph)
+    }
+
     /// Run one turn: retrieve relevant memories, reply, learn from the exchange, and
     /// update the relationship state. `now` is the timestamp stamped on new memories.
     pub fn respond(
