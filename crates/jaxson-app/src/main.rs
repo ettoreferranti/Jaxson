@@ -18,7 +18,7 @@ mod persist;
 
 use jaxson_agent::{Agent, AgentConfig, Embedder, HashEmbedder, Turn};
 use jaxson_core::MoodVector;
-use jaxson_face::{face, rasterize, Bitmap};
+use jaxson_face::{face, face_with, rasterize, Activity, Bitmap};
 use jaxson_llm::ollama::{self, OllamaModel};
 use jaxson_llm::{ChatTemplate, GenerationConfig, LlmError, TextGenerator};
 use jaxson_memory::{MemoryId, MemoryKind, MemoryNode};
@@ -302,6 +302,66 @@ impl AudioOut {
     }
 }
 
+/// Lip-sync driver (F2.3): turns the stream of spoken sentence chunks into the mouth's
+/// current openness. Each chunk's loudness envelope is queued with the wall-clock duration
+/// of one envelope frame; [`level`](Self::level) reads the envelope at the elapsed playback
+/// time (audio plays at real time, so wall-clock tracks the playhead closely enough for a
+/// stylized face). Chunks play back-to-back; the timeline resets when speech resumes after
+/// a silence. Only present with `--features piper`.
+#[cfg(feature = "piper")]
+#[derive(Default)]
+struct SpeechAnimator {
+    /// `(loudness envelope, seconds per envelope frame)` for chunks not yet fully played.
+    queue: std::collections::VecDeque<(Vec<f32>, f64)>,
+    /// When the chunk at the front of the queue started playing.
+    head_start: Option<Instant>,
+}
+
+#[cfg(feature = "piper")]
+impl SpeechAnimator {
+    /// Queue a spoken chunk's loudness envelope. `frame_secs` is the wall-clock duration
+    /// each envelope sample represents. No-op for an empty envelope.
+    fn push(&mut self, envelope: Vec<f32>, frame_secs: f64) {
+        if envelope.is_empty() || frame_secs <= 0.0 {
+            return;
+        }
+        // If nothing is playing, restart the timeline so the new chunk begins now rather
+        // than partway through (the previous run's elapsed time is stale).
+        if self.queue.is_empty() {
+            self.head_start = None;
+        }
+        self.queue.push_back((envelope, frame_secs));
+    }
+
+    /// The current mouth level in `[0, 1]`, or `None` when nothing is playing. Drops chunks
+    /// whose playback time has fully elapsed.
+    fn level(&mut self) -> Option<f64> {
+        let now = Instant::now();
+        let mut start = *self.head_start.get_or_insert(now);
+        loop {
+            // Read the front chunk's timing, then drop the borrow before mutating the queue.
+            let (dur, frame_secs, len) = match self.queue.front() {
+                Some((env, frame_secs)) => (env.len() as f64 * frame_secs, *frame_secs, env.len()),
+                None => {
+                    self.head_start = None;
+                    return None;
+                }
+            };
+            let elapsed = now.duration_since(start).as_secs_f64();
+            if elapsed >= dur {
+                // This chunk finished; advance the playhead to the next one.
+                start += std::time::Duration::from_secs_f64(dur);
+                self.queue.pop_front();
+                continue;
+            }
+            let idx = ((elapsed / frame_secs) as usize).min(len - 1);
+            let level = self.queue.front().expect("front checked above").0[idx] as f64;
+            self.head_start = Some(start);
+            return Some(level);
+        }
+    }
+}
+
 /// The agent, model, embedder, and (with `--features piper`) the speech synthesizer
 /// bundled together so a turn can be handed to a worker thread and handed back when done
 /// (F1.9b — keeps the window responsive while the model generates and speaks). All are
@@ -366,6 +426,9 @@ struct JaxsonApp {
     // Voice output: plays synthesized replies; only with `--features piper`.
     #[cfg(feature = "piper")]
     audio: Option<AudioOut>,
+    // Lip-sync: drives mouth openness from the playing speech (piper feature).
+    #[cfg(feature = "piper")]
+    speech: SpeechAnimator,
     // Memory inspector state.
     show_memories: bool,
     mem_search: String,
@@ -446,6 +509,8 @@ impl JaxsonApp {
             mic_status: String::new(),
             #[cfg(feature = "piper")]
             audio,
+            #[cfg(feature = "piper")]
+            speech: SpeechAnimator::default(),
             show_memories: false,
             mem_search: String::new(),
             editing: None,
@@ -799,11 +864,18 @@ impl JaxsonApp {
                 match rx.try_recv() {
                     Ok(TurnUpdate::Token(piece)) => self.streaming.push_str(&piece),
                     // A synthesized sentence arrived — play it now (it queues after anything
-                    // still playing). A no-op when there's no output device.
+                    // still playing) and feed its loudness envelope to the lip-sync driver.
                     #[cfg(feature = "piper")]
                     Ok(TurnUpdate::Speak(audio)) => {
                         if let Some(out) = self.audio.as_ref() {
                             out.play(&audio);
+                        }
+                        // ~45 ms envelope frames: smooth enough to track speech, coarse
+                        // enough to flap the mouth visibly.
+                        let frame = (audio.sample_rate as f64 * 0.045) as usize;
+                        if frame > 0 {
+                            let frame_secs = frame as f64 / audio.sample_rate as f64;
+                            self.speech.push(audio.envelope(frame), frame_secs);
                         }
                     }
                     Ok(TurnUpdate::Done(brain, result)) => {
@@ -858,7 +930,19 @@ impl eframe::App for JaxsonApp {
         // mood is cached (updated when a turn finishes), so the face keeps moving even
         // while the brain is away on the worker thread.
         let t = self.start.elapsed().as_secs_f64();
-        let bitmap = rasterize(&face(self.mood, t), FACE_PIXELS);
+        // Layer in what Jaxson is doing (F2.3): listening (mic open) takes priority over
+        // speaking (lip-sync to the playing reply); otherwise idle mood animation.
+        #[allow(unused_mut)]
+        let mut activity = Activity::Idle;
+        #[cfg(feature = "piper")]
+        if let Some(level) = self.speech.level() {
+            activity = Activity::Speaking { level };
+        }
+        #[cfg(feature = "whisper")]
+        if self.recorder.is_some() {
+            activity = Activity::Listening;
+        }
+        let bitmap = rasterize(&face_with(self.mood, t, activity), FACE_PIXELS);
         self.face_tex
             .set(to_image(&bitmap), egui::TextureOptions::NEAREST);
 

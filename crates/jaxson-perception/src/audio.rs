@@ -46,6 +46,33 @@ impl Audio {
         self.rms() < threshold
     }
 
+    /// A loudness envelope: the RMS of each consecutive `frame`-sample window, then
+    /// **peak-normalized** to `[0, 1]` so the loudest moment maps to `1.0`. Sampling this
+    /// at playback time drives lip-sync (the mouth opens with the voice). Within a clip the
+    /// relative dynamics (pauses dip toward `0`) are preserved; normalizing means a quiet
+    /// clip still animates the mouth fully. Empty for an empty clip or `frame == 0`; an
+    /// all-silent clip yields all-zero frames.
+    pub fn envelope(&self, frame: usize) -> Vec<f32> {
+        if frame == 0 || self.samples.is_empty() {
+            return Vec::new();
+        }
+        let mut env: Vec<f32> = self
+            .samples
+            .chunks(frame)
+            .map(|w| {
+                let sum_sq: f32 = w.iter().map(|s| s * s).sum();
+                (sum_sq / w.len() as f32).sqrt()
+            })
+            .collect();
+        let peak = env.iter().copied().fold(0.0_f32, f32::max);
+        if peak > 0.0 {
+            for v in &mut env {
+                *v /= peak;
+            }
+        }
+        env
+    }
+
     /// Drop leading and trailing samples whose magnitude is below `threshold`, keeping the
     /// spoken middle (less audio for whisper to chew on). An all-quiet clip becomes empty.
     pub fn trim_silence(&self, threshold: f32) -> Audio {
@@ -142,6 +169,50 @@ mod tests {
     #[test]
     fn rms_of_empty_is_zero() {
         assert_eq!(Audio::new(Vec::new(), 16_000).rms(), 0.0);
+    }
+
+    #[test]
+    fn envelope_is_peak_normalized_rms_per_frame() {
+        // Frames of 2: [1,-1] rms 1, [0.5,-0.5] rms 0.5, [0,0] rms 0 → peak 1 → unchanged.
+        let audio = Audio::new(vec![1.0, -1.0, 0.5, -0.5, 0.0, 0.0], 16_000);
+        let env = audio.envelope(2);
+        assert_eq!(env.len(), 3);
+        assert!(approx(env[0], 1.0));
+        assert!(approx(env[1], 0.5));
+        assert!(approx(env[2], 0.0));
+    }
+
+    #[test]
+    fn envelope_normalizes_so_the_loudest_frame_is_one() {
+        // All quiet-ish: rms 0.5 then 0.25 → peak 0.5 → normalized to 1.0 and 0.5.
+        let audio = Audio::new(vec![0.5, -0.5, 0.25, -0.25], 16_000);
+        let env = audio.envelope(2);
+        assert!(approx(env[0], 1.0));
+        assert!(approx(env[1], 0.5));
+    }
+
+    #[test]
+    fn envelope_of_silence_is_all_zero() {
+        let env = Audio::new(vec![0.0; 6], 16_000).envelope(2);
+        assert_eq!(env, vec![0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn envelope_handles_a_short_final_frame() {
+        // 5 samples at a constant 0.2, frame 2 → 3 frames (the last is a single sample).
+        // Every frame's RMS is 0.2, so all normalize to 1.0 — which only holds if each
+        // frame divides by its *own* length (the short frame included), not a fixed one.
+        let env = Audio::new(vec![0.2, 0.2, 0.2, 0.2, 0.2], 16_000).envelope(2);
+        assert_eq!(env.len(), 3);
+        for v in env {
+            assert!(approx(v, 1.0), "{v}");
+        }
+    }
+
+    #[test]
+    fn envelope_is_empty_for_empty_clip_or_zero_frame() {
+        assert!(Audio::new(Vec::new(), 16_000).envelope(2).is_empty());
+        assert!(Audio::new(vec![0.1, 0.2], 16_000).envelope(0).is_empty());
     }
 
     #[test]
