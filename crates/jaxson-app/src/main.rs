@@ -235,8 +235,15 @@ fn load_tts() -> Option<Box<dyn jaxson_perception::TextToSpeech + Send>> {
     let path = std::env::var("JAXSON_PIPER_VOICE").ok()?;
     match jaxson_perception::backends::PiperTts::load(&path) {
         Ok(tts) => {
-            tracing::info!(voice = %path, "loaded piper voice");
-            Some(Box::new(tts))
+            // Piper voices tend to read fast and flat; slow the pace a touch for a calmer,
+            // kid-friendly delivery. Override with $JAXSON_PIPER_LENGTH_SCALE (higher =
+            // slower; the voice's own default is used if it's unset or unparseable).
+            let length_scale = std::env::var("JAXSON_PIPER_LENGTH_SCALE")
+                .ok()
+                .and_then(|s| s.parse::<f32>().ok())
+                .unwrap_or(1.2);
+            tracing::info!(voice = %path, length_scale, "loaded piper voice");
+            Some(Box::new(tts.with_length_scale(Some(length_scale))))
         }
         Err(e) => {
             tracing::error!(voice = %path, error = %e, "failed to load piper voice");
@@ -311,13 +318,12 @@ struct Brain {
 enum TurnUpdate {
     /// A raw token piece, as the reply is generated.
     Token(String),
-    /// The turn finished: the brain comes back (to be reinstalled), the result, and — with
-    /// the `piper` feature — the synthesized speech to play (`None` otherwise).
-    Done(
-        Box<Brain>,
-        Result<Turn, String>,
-        Option<jaxson_perception::Audio>,
-    ),
+    /// A synthesized sentence of the reply, ready to play (piper feature only). Sent as
+    /// each sentence finishes so speech starts before the whole reply is synthesized.
+    #[cfg(feature = "piper")]
+    Speak(jaxson_perception::Audio),
+    /// The turn finished: the brain comes back (to be reinstalled) plus the result.
+    Done(Box<Brain>, Result<Turn, String>),
 }
 
 struct JaxsonApp {
@@ -756,32 +762,26 @@ impl JaxsonApp {
                 )
             };
             tracing::info!(elapsed_ms = started.elapsed().as_millis(), "turn complete");
-            // Synthesize the spoken reply here on the worker (it can take a moment), so the
-            // UI thread only has to hand the finished audio to the player. `speakable_text`
-            // inside the backend keeps `*action*` cues out of the speech.
-            let audio: Option<jaxson_perception::Audio> = {
-                #[cfg(feature = "piper")]
-                {
-                    match (brain.tts.as_mut(), &result) {
-                        (Some(tts), Ok(turn)) => match tts.synthesize(&turn.reply) {
-                            Ok(a) => Some(a),
-                            Err(e) => {
-                                tracing::error!(error = %e, "speech synthesis failed");
-                                None
-                            }
-                        },
-                        _ => None,
+            // Speak the reply sentence by sentence (still on this worker thread): playback
+            // can start after the first short sentence instead of waiting for the whole
+            // paragraph to synthesize, and each chunk gets a natural pause at its boundary.
+            // `split_sentences`/`synthesize` strip `*action*` cues so they aren't read aloud.
+            #[cfg(feature = "piper")]
+            if let (Some(tts), Ok(turn)) = (brain.tts.as_mut(), &result) {
+                for sentence in jaxson_perception::split_sentences(&turn.reply) {
+                    match tts.synthesize(&sentence) {
+                        Ok(audio) if !audio.samples.is_empty() => {
+                            let _ = tx.send(TurnUpdate::Speak(audio));
+                            ctx.request_repaint();
+                        }
+                        Ok(_) => {}
+                        Err(e) => tracing::error!(error = %e, "speech synthesis failed"),
                     }
                 }
-                #[cfg(not(feature = "piper"))]
-                {
-                    None
-                }
-            };
+            }
             let _ = tx.send(TurnUpdate::Done(
                 Box::new(brain),
                 result.map_err(|e| e.to_string()),
-                audio,
             ));
             ctx.request_repaint();
         });
@@ -790,38 +790,33 @@ impl JaxsonApp {
     /// Drain the worker channel: accumulate streamed tokens, and when the turn finishes,
     /// reinstall the brain, record the reply, and persist.
     fn poll_turn(&mut self) {
-        type Done = (
-            Box<Brain>,
-            Result<Turn, String>,
-            Option<jaxson_perception::Audio>,
-        );
-        let mut done: Option<Done> = None;
+        let mut done: Option<(Box<Brain>, Result<Turn, String>)> = None;
         if let Some(rx) = &self.pending {
             loop {
                 match rx.try_recv() {
                     Ok(TurnUpdate::Token(piece)) => self.streaming.push_str(&piece),
-                    Ok(TurnUpdate::Done(brain, result, audio)) => {
-                        done = Some((brain, result, audio));
+                    // A synthesized sentence arrived — play it now (it queues after anything
+                    // still playing). A no-op when there's no output device.
+                    #[cfg(feature = "piper")]
+                    Ok(TurnUpdate::Speak(audio)) => {
+                        if let Some(out) = self.audio.as_ref() {
+                            out.play(&audio);
+                        }
+                    }
+                    Ok(TurnUpdate::Done(brain, result)) => {
+                        done = Some((brain, result));
                         break;
                     }
                     Err(_) => break, // nothing more this frame (or worker gone)
                 }
             }
         }
-        let Some((brain, result, audio)) = done else {
+        let Some((brain, result)) = done else {
             return;
         };
         self.brain = Some(*brain);
         self.pending = None;
         self.streaming.clear();
-        // Speak the reply (piper feature). Done before showing the text so the voice starts
-        // as the message appears; a no-op when there's no voice or output device.
-        #[cfg(feature = "piper")]
-        if let (Some(out), Some(audio)) = (self.audio.as_ref(), audio.as_ref()) {
-            out.play(audio);
-        }
-        #[cfg(not(feature = "piper"))]
-        let _ = &audio;
         match result {
             Ok(turn) => {
                 tracing::info!(

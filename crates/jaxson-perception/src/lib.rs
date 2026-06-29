@@ -30,4 +30,4 @@ mod tts;
 pub use audio::{downmix_stereo, Audio, WHISPER_SAMPLE_RATE};
 pub use error::PerceptionError;
 pub use stt::{MockStt, SpeechToText, Transcript};
-pub use tts::{speakable_text, MockTts, TextToSpeech, MOCK_TTS_SAMPLE_RATE};
+pub use tts::{speakable_text, split_sentences, MockTts, TextToSpeech, MOCK_TTS_SAMPLE_RATE};
