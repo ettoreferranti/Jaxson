@@ -41,6 +41,18 @@ Unlike the model, this is fully testable, so **CI does build and test it** (the
 Keychain in the app), and opening with the wrong key fails. `*.jaxsondb`/`*.sqlite`
 are git-ignored.
 
+> **Skipping the Keychain prompt in dev.** macOS re-prompts for Keychain access on every
+> launch of an unsigned `cargo build` binary (its code identity changes each rebuild). To
+> avoid that while iterating, set `JAXSON_DB_KEY` to any passphrase — the app uses it
+> directly and skips the Keychain. The DB is still encrypted with that key (use the same
+> value each run to reopen an existing DB). Dev only: a key in the environment is weaker
+> than one in the Keychain, so don't set it for a real install.
+>
+> ```sh
+> JAXSON_DB_KEY=dev-only-passphrase \
+>   cargo run --manifest-path crates/jaxson-app/Cargo.toml --features sqlite,llama,piper
+> ```
+
 ## The `whisper` feature (speech-to-text)
 
 `jaxson-perception` is pure by default (the `SpeechToText` seam, audio helpers, and
