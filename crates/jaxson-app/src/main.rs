@@ -227,21 +227,97 @@ fn load_stt() -> Option<Box<dyn jaxson_perception::SpeechToText>> {
     }
 }
 
-/// The agent, model, and embedder bundled together so a turn can be handed to a worker
-/// thread and handed back when done (F1.9b — keeps the window responsive while the model
-/// generates). All three are `Send`.
+/// Load the Piper text-to-speech voice from `$JAXSON_PIPER_VOICE`, if set and loadable.
+/// Speech synthesis runs on the generation worker thread (it's bundled into [`Brain`]), so
+/// the box must be `Send`.
+#[cfg(feature = "piper")]
+fn load_tts() -> Option<Box<dyn jaxson_perception::TextToSpeech + Send>> {
+    let path = std::env::var("JAXSON_PIPER_VOICE").ok()?;
+    match jaxson_perception::backends::PiperTts::load(&path) {
+        Ok(tts) => {
+            tracing::info!(voice = %path, "loaded piper voice");
+            Some(Box::new(tts))
+        }
+        Err(e) => {
+            tracing::error!(voice = %path, error = %e, "failed to load piper voice");
+            None
+        }
+    }
+}
+
+/// The audio output for spoken replies: the rodio device sink (kept alive — dropping it
+/// stops audio) plus a player that resamples and feeds it. Lives on the UI thread (the
+/// underlying cpal stream isn't `Send`); only present with `--features piper`.
+#[cfg(feature = "piper")]
+struct AudioOut {
+    // Field order matters for drop: the player is torn down before the sink it feeds.
+    player: rodio::Player,
+    _sink: rodio::MixerDeviceSink,
+}
+
+#[cfg(feature = "piper")]
+impl AudioOut {
+    /// Open the default output device, or `None` if there isn't one (playback degrades to
+    /// silent — never fatal).
+    fn open() -> Option<Self> {
+        match rodio::DeviceSinkBuilder::open_default_sink() {
+            Ok(mut sink) => {
+                sink.log_on_drop(false);
+                let player = rodio::Player::connect_new(sink.mixer());
+                Some(AudioOut {
+                    player,
+                    _sink: sink,
+                })
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "no audio output device; replies won't be spoken");
+                None
+            }
+        }
+    }
+
+    /// Queue synthesized speech for playback. rodio resamples the voice's rate to the
+    /// device and maps the mono signal to its channels. A no-op for empty audio.
+    fn play(&self, audio: &jaxson_perception::Audio) {
+        let Some(rate) = std::num::NonZero::new(audio.sample_rate) else {
+            return; // rate 0 marks "nothing to say"
+        };
+        if audio.samples.is_empty() {
+            return;
+        }
+        // rodio's default sample type is f32 — same as our PCM — so feed it directly.
+        let mono = std::num::NonZero::new(1u16).expect("1 is nonzero");
+        self.player.append(rodio::buffer::SamplesBuffer::new(
+            mono,
+            rate,
+            audio.samples.clone(),
+        ));
+    }
+}
+
+/// The agent, model, embedder, and (with `--features piper`) the speech synthesizer
+/// bundled together so a turn can be handed to a worker thread and handed back when done
+/// (F1.9b — keeps the window responsive while the model generates and speaks). All are
+/// `Send`.
 struct Brain {
     agent: Agent,
     model: Box<dyn TextGenerator + Send>,
     embedder: Box<dyn Embedder + Send>,
+    #[cfg(feature = "piper")]
+    tts: Option<Box<dyn jaxson_perception::TextToSpeech + Send>>,
 }
 
 /// Messages the generation worker streams back to the UI thread.
 enum TurnUpdate {
     /// A raw token piece, as the reply is generated.
     Token(String),
-    /// The turn finished: the brain comes back (to be reinstalled) plus the result.
-    Done(Box<Brain>, Result<Turn, String>),
+    /// The turn finished: the brain comes back (to be reinstalled), the result, and — with
+    /// the `piper` feature — the synthesized speech to play (`None` otherwise).
+    Done(
+        Box<Brain>,
+        Result<Turn, String>,
+        Option<jaxson_perception::Audio>,
+    ),
 }
 
 struct JaxsonApp {
@@ -281,6 +357,9 @@ struct JaxsonApp {
     recorder: Option<Recorder>,
     #[cfg(feature = "whisper")]
     mic_status: String,
+    // Voice output: plays synthesized replies; only with `--features piper`.
+    #[cfg(feature = "piper")]
+    audio: Option<AudioOut>,
     // Memory inspector state.
     show_memories: bool,
     mem_search: String,
@@ -306,18 +385,30 @@ impl JaxsonApp {
             template,
             // Stop generation at the template's end-of-turn token.
             gen_config: GenerationConfig {
-                stop: template.stop_tokens().iter().map(|s| s.to_string()).collect(),
+                stop: template
+                    .stop_tokens()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 ..Default::default()
             },
             ..Default::default()
         });
         let mood = agent.mood();
         let memory_count = agent.graph().node_count();
+        // Spoken replies (piper feature): load the voice, and only open the output device
+        // if a voice actually loaded.
+        #[cfg(feature = "piper")]
+        let tts = load_tts();
+        #[cfg(feature = "piper")]
+        let audio = tts.is_some().then(AudioOut::open).flatten();
         JaxsonApp {
             brain: Some(Brain {
                 agent,
                 model: boot.model,
                 embedder: boot.embedder,
+                #[cfg(feature = "piper")]
+                tts,
             }),
             pending: None,
             streaming: String::new(),
@@ -344,6 +435,8 @@ impl JaxsonApp {
             recorder: None,
             #[cfg(feature = "whisper")]
             mic_status: String::new(),
+            #[cfg(feature = "piper")]
+            audio,
             show_memories: false,
             mem_search: String::new(),
             editing: None,
@@ -468,7 +561,9 @@ impl JaxsonApp {
                         brain.model = Box::new(generator);
                         // Match the chat format to the model so it doesn't emit garbled
                         // control tokens (e.g. llama3.1 needs the Llama-3 template).
-                        brain.agent.set_template(ChatTemplate::for_model_name(&name));
+                        brain
+                            .agent
+                            .set_template(ChatTemplate::for_model_name(&name));
                     } else {
                         return; // a turn is generating; the picker is disabled anyway
                     }
@@ -541,9 +636,7 @@ impl JaxsonApp {
         let device = cpal::default_host()
             .default_input_device()
             .ok_or("no microphone found")?;
-        let config = device
-            .default_input_config()
-            .map_err(|e| e.to_string())?;
+        let config = device.default_input_config().map_err(|e| e.to_string())?;
         let sample_rate = config.sample_rate().0;
         let channels = config.channels();
         let buffer = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
@@ -601,7 +694,10 @@ impl JaxsonApp {
         let mono = match channels {
             1 => Audio::new(raw, sample_rate),
             2 => downmix_stereo(&raw, sample_rate),
-            n => Audio::new(raw.iter().step_by(n as usize).copied().collect(), sample_rate),
+            n => Audio::new(
+                raw.iter().step_by(n as usize).copied().collect(),
+                sample_rate,
+            ),
         };
         let audio = mono.resample_to(WHISPER_SAMPLE_RATE);
 
@@ -660,7 +756,33 @@ impl JaxsonApp {
                 )
             };
             tracing::info!(elapsed_ms = started.elapsed().as_millis(), "turn complete");
-            let _ = tx.send(TurnUpdate::Done(Box::new(brain), result.map_err(|e| e.to_string())));
+            // Synthesize the spoken reply here on the worker (it can take a moment), so the
+            // UI thread only has to hand the finished audio to the player. `speakable_text`
+            // inside the backend keeps `*action*` cues out of the speech.
+            let audio: Option<jaxson_perception::Audio> = {
+                #[cfg(feature = "piper")]
+                {
+                    match (brain.tts.as_mut(), &result) {
+                        (Some(tts), Ok(turn)) => match tts.synthesize(&turn.reply) {
+                            Ok(a) => Some(a),
+                            Err(e) => {
+                                tracing::error!(error = %e, "speech synthesis failed");
+                                None
+                            }
+                        },
+                        _ => None,
+                    }
+                }
+                #[cfg(not(feature = "piper"))]
+                {
+                    None
+                }
+            };
+            let _ = tx.send(TurnUpdate::Done(
+                Box::new(brain),
+                result.map_err(|e| e.to_string()),
+                audio,
+            ));
             ctx.request_repaint();
         });
     }
@@ -668,28 +790,45 @@ impl JaxsonApp {
     /// Drain the worker channel: accumulate streamed tokens, and when the turn finishes,
     /// reinstall the brain, record the reply, and persist.
     fn poll_turn(&mut self) {
-        let mut done: Option<(Box<Brain>, Result<Turn, String>)> = None;
+        type Done = (
+            Box<Brain>,
+            Result<Turn, String>,
+            Option<jaxson_perception::Audio>,
+        );
+        let mut done: Option<Done> = None;
         if let Some(rx) = &self.pending {
             loop {
                 match rx.try_recv() {
                     Ok(TurnUpdate::Token(piece)) => self.streaming.push_str(&piece),
-                    Ok(TurnUpdate::Done(brain, result)) => {
-                        done = Some((brain, result));
+                    Ok(TurnUpdate::Done(brain, result, audio)) => {
+                        done = Some((brain, result, audio));
                         break;
                     }
                     Err(_) => break, // nothing more this frame (or worker gone)
                 }
             }
         }
-        let Some((brain, result)) = done else {
+        let Some((brain, result, audio)) = done else {
             return;
         };
         self.brain = Some(*brain);
         self.pending = None;
         self.streaming.clear();
+        // Speak the reply (piper feature). Done before showing the text so the voice starts
+        // as the message appears; a no-op when there's no voice or output device.
+        #[cfg(feature = "piper")]
+        if let (Some(out), Some(audio)) = (self.audio.as_ref(), audio.as_ref()) {
+            out.play(audio);
+        }
+        #[cfg(not(feature = "piper"))]
+        let _ = &audio;
         match result {
             Ok(turn) => {
-                tracing::info!(learned = turn.learned, retrieved = turn.retrieved, "reply ready");
+                tracing::info!(
+                    learned = turn.learned,
+                    retrieved = turn.retrieved,
+                    "reply ready"
+                );
                 self.transcript.push(("Jaxson", turn.reply));
             }
             Err(e) => {
@@ -813,7 +952,10 @@ impl eframe::App for JaxsonApp {
                         // be read fully and copied). The speaker name is the colored tag.
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
-                            ui.colored_label(color, egui::RichText::new(format!("{who}:")).strong());
+                            ui.colored_label(
+                                color,
+                                egui::RichText::new(format!("{who}:")).strong(),
+                            );
                             ui.label(text);
                         });
                         ui.add_space(4.0);
@@ -842,7 +984,11 @@ impl eframe::App for JaxsonApp {
                 // to stop + transcribe + send.
                 #[cfg(feature = "whisper")]
                 if self.stt.is_some() {
-                    let label = if self.recorder.is_some() { "⏹" } else { "🎤" };
+                    let label = if self.recorder.is_some() {
+                        "⏹"
+                    } else {
+                        "🎤"
+                    };
                     if ui
                         .add_enabled(!busy, egui::Button::new(label))
                         .on_hover_text("Push to talk")
@@ -941,6 +1087,8 @@ fn main() -> eframe::Result<()> {
     tracing::info!(
         llama = cfg!(feature = "llama"),
         sqlite = cfg!(feature = "sqlite"),
+        whisper = cfg!(feature = "whisper"),
+        piper = cfg!(feature = "piper"),
         "Jaxson starting"
     );
     let native_options = eframe::NativeOptions {
