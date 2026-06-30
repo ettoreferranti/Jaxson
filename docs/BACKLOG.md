@@ -151,7 +151,16 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   envelope to drive the mouth; the mic-recording state (`whisper`) shows the listening cue
   (priority over speaking). Compile + clippy verified for default / `piper` / `whisper` /
   `whisper,piper`; live animation run on macOS by the owner.
-- [ ] **F2.4** `jaxson-safety`: output content filter + topic guardrails (FR-S1/S2).
+- [x] **F2.4** `jaxson-safety`: output content filter + topic guardrails (FR-S1/S2). New
+  pure, 100%-mutation-graded crate: a `SafetyFilter` screens text against severity-ordered
+  `Category`s (self-harm, sexual, hate, violence, dangerous activity, substances, profanity,
+  mature themes) at a configurable `Strictness` (Lenient/Standard/Strict; Standard default),
+  returning `Verdict::Allow`/`Block(category)` with whole-word + phrase matching, plus an
+  in-character `deflection` (gentle for self-harm). Wired as the **post-filter** in the agent
+  (FR-S1): every reply is screened before it's shown/spoken/remembered, and a blocked reply
+  is swapped for the deflection — verified by an agent test, agent stays 0-missed. Deterministic
+  lexicon stand-in (like `jaxson-affect`'s analyzer), to be augmented by an LLM classifier
+  later. Follow-ups: input pre-filter, and exposing strictness for parental controls (F2.5).
 - [ ] **F2.5** Parental-control mode (authenticated): review history/memories, tune
   guardrail strictness (FR-S3, resolve OQ-3).
 - [ ] **F2.6** Privacy hardening: encryption-at-rest verification, log scrubbing.

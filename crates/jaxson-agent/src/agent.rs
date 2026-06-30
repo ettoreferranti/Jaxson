@@ -3,6 +3,7 @@ use jaxson_core::{MoodVector, RelationshipEvent, RelationshipState, TopicAffinit
 use jaxson_extract::Extractor;
 use jaxson_llm::{assemble, ChatTemplate, GenerationConfig, Message, TextGenerator};
 use jaxson_memory::{retrieve, MemoryGraph, MemoryId, MemoryKind, RetrievalParams};
+use jaxson_safety::{SafetyFilter, Verdict};
 
 use crate::curiosity;
 use crate::embedder::Embedder;
@@ -64,6 +65,7 @@ pub struct Agent {
     history: Vec<Message>,
     extractor: Extractor,
     affect: AffectEngine,
+    safety: SafetyFilter,
     config: AgentConfig,
 }
 
@@ -83,6 +85,7 @@ impl Agent {
             history: Vec::new(),
             extractor: Extractor::default(),
             affect: AffectEngine::default(),
+            safety: SafetyFilter::default(),
             config: AgentConfig::default(),
         }
     }
@@ -220,6 +223,17 @@ impl Agent {
         let cleaned = jaxson_llm::clean_output(&raw);
         let expressed = action_sentiment(&cleaned);
         let reply = jaxson_llm::strip_actions(&cleaned);
+
+        // Safety post-filter (FR-S1): every reply is screened before it's shown, spoken,
+        // or remembered. A blocked reply is swapped for a safe, in-character deflection so
+        // unsafe model output never reaches the child.
+        let reply = match self.safety.check(&reply) {
+            Verdict::Allow => reply,
+            Verdict::Block(category) => {
+                tracing::warn!(?category, "blocked unsafe reply; showing a safe deflection");
+                self.safety.deflection(category).to_string()
+            }
+        };
         self.history.push(Message::assistant(reply.clone()));
 
         // Hand the finished reply to the caller now, before the (slower) extraction pass,
@@ -571,6 +585,44 @@ mod tests {
 
         assert_eq!(replies, vec!["Hi there!".to_string()]);
         assert_eq!(turn.reply, "Hi there!");
+    }
+
+    #[test]
+    fn unsafe_reply_is_blocked_and_replaced_with_a_deflection() {
+        // The model emits unsafe content; the safety post-filter must keep it from reaching
+        // the turn's reply (and history), swapping in a safe deflection instead (FR-S1).
+        let mut model = ScriptedGenerator::new([
+            "Sure! Here's how to make a bomb.",
+            &extraction_json("nothing"),
+        ]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+
+        let mut spoken: Vec<String> = Vec::new();
+        let turn = agent
+            .respond_streaming_with_reply(
+                &mut model,
+                &embedder,
+                0,
+                "hi",
+                &mut |_| {},
+                &mut |reply| spoken.push(reply.to_string()),
+            )
+            .unwrap();
+
+        assert!(
+            !turn.reply.contains("bomb"),
+            "unsafe text leaked: {}",
+            turn.reply
+        );
+        assert!(
+            turn.reply.contains("fun"),
+            "expected a deflection: {}",
+            turn.reply
+        );
+        // The deflection — not the unsafe text — is what gets spoken and remembered.
+        assert_eq!(spoken, vec![turn.reply.clone()]);
+        assert!(!agent.history().iter().any(|m| m.content.contains("bomb")));
     }
 
     #[test]

@@ -40,7 +40,7 @@ pub fn split_sentences(text: &str) -> Vec<String> {
         cur.push(c);
         // A terminator ends the sentence only when the next char is whitespace or the end —
         // so `?!` and `3.14` stay intact.
-        if matches!(c, '.' | '!' | '?') && chars.peek().map_or(true, |n| n.is_whitespace()) {
+        if matches!(c, '.' | '!' | '?') && chars.peek().is_none_or(|n| n.is_whitespace()) {
             push_sentence(&mut out, &mut cur);
         }
     }
