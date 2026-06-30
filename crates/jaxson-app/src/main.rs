@@ -217,13 +217,15 @@ struct Recorder {
 #[cfg(feature = "whisper")]
 fn load_stt() -> Option<Box<dyn jaxson_perception::SpeechToText>> {
     let path = std::env::var("JAXSON_WHISPER_MODEL").ok()?;
+    // Scrub the username out of the path before logging (privacy / F2.6).
+    let shown = jaxson_core::scrub::redact(&path);
     match jaxson_perception::backends::WhisperStt::load(&path) {
         Ok(stt) => {
-            tracing::info!(model = %path, "loaded whisper model");
+            tracing::info!(model = %shown, "loaded whisper model");
             Some(Box::new(stt))
         }
         Err(e) => {
-            tracing::error!(model = %path, error = %e, "failed to load whisper model");
+            tracing::error!(model = %shown, error = %e, "failed to load whisper model");
             None
         }
     }
@@ -235,6 +237,8 @@ fn load_stt() -> Option<Box<dyn jaxson_perception::SpeechToText>> {
 #[cfg(feature = "piper")]
 fn load_tts() -> Option<Box<dyn jaxson_perception::TextToSpeech + Send>> {
     let path = std::env::var("JAXSON_PIPER_VOICE").ok()?;
+    // Scrub the username out of the path before logging (privacy / F2.6).
+    let shown = jaxson_core::scrub::redact(&path);
     match jaxson_perception::backends::PiperTts::load(&path) {
         Ok(tts) => {
             // Piper voices tend to read fast and flat; slow the pace a touch for a calmer,
@@ -244,11 +248,11 @@ fn load_tts() -> Option<Box<dyn jaxson_perception::TextToSpeech + Send>> {
                 .ok()
                 .and_then(|s| s.parse::<f32>().ok())
                 .unwrap_or(1.2);
-            tracing::info!(voice = %path, length_scale, "loaded piper voice");
+            tracing::info!(voice = %shown, length_scale, "loaded piper voice");
             Some(Box::new(tts.with_length_scale(Some(length_scale))))
         }
         Err(e) => {
-            tracing::error!(voice = %path, error = %e, "failed to load piper voice");
+            tracing::error!(voice = %shown, error = %e, "failed to load piper voice");
             None
         }
     }

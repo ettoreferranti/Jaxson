@@ -254,6 +254,43 @@ mod tests {
     }
 
     #[test]
+    fn the_database_file_is_encrypted_at_rest() {
+        // Verify the on-disk file is genuinely encrypted (FR-S4 / privacy): a recognizable
+        // secret we store must not appear in the clear, and the file must not be a plaintext
+        // SQLite database (SQLCipher encrypts the header too).
+        const SECRET: &str = "PEANUT-ALLERGY-SECRET-9f3a2b";
+        let dir = tempfile::tempdir().unwrap();
+        let path = db_path(&dir);
+        {
+            let mut store = SqliteStore::open(&path, "a-strong-key").unwrap();
+            let mut g = MemoryGraph::new();
+            g.insert_node(MemoryNode::new(
+                MemoryId::from_u128(1),
+                MemoryKind::Fact,
+                SECRET,
+                0,
+                Provenance::StatedByUser,
+                1.0,
+            ));
+            store.save(&g).unwrap();
+        }
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(!bytes.is_empty(), "database file is empty");
+        // A plaintext SQLite DB begins with this magic string; an encrypted one does not.
+        assert!(
+            !bytes.starts_with(b"SQLite format 3\0"),
+            "file is an unencrypted SQLite database"
+        );
+        // The stored content must not be readable on disk.
+        let needle = SECRET.as_bytes();
+        assert!(
+            !bytes.windows(needle.len()).any(|w| w == needle),
+            "plaintext memory content leaked to disk"
+        );
+    }
+
+    #[test]
     fn embeddings_survive_persistence() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = SqliteStore::open(db_path(&dir), "k").unwrap();
