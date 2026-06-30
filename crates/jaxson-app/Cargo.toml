@@ -35,6 +35,7 @@ jaxson-llm = { path = "../jaxson-llm" }
 jaxson-memory = { path = "../jaxson-memory" }
 jaxson-agent = { path = "../jaxson-agent" }
 jaxson-perception = { path = "../jaxson-perception" }
+jaxson-safety = { path = "../jaxson-safety" }
 directories = "5"
 # Microphone capture for push-to-talk (whisper feature only).
 cpal = { version = "0.15", optional = true }

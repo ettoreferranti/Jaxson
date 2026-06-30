@@ -23,5 +23,7 @@
 //! ```
 
 mod filter;
+mod parental;
 
 pub use filter::{Category, SafetyFilter, Strictness, Verdict};
+pub use parental::PasscodeHash;

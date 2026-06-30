@@ -1,10 +1,12 @@
 //! The deterministic content filter: tokenize text, match it against per-category term
 //! lists, and decide whether to block at the active [`Strictness`].
 
+use serde::{Deserialize, Serialize};
+
 /// How strict the guardrails are. Ordered `Lenient < Standard < Strict`, so a category
-/// blocks when the active strictness is at least its threshold. Wired to parental controls
-/// (FR-S3) later; the default is [`Standard`](Strictness::Standard).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+/// blocks when the active strictness is at least its threshold. Set via parental controls
+/// (FR-S3); the default is [`Standard`](Strictness::Standard).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub enum Strictness {
     /// Block only the serious harms (allow mild profanity).
     Lenient,
