@@ -138,10 +138,17 @@ const MOUTH_CENTER_X: f64 = 0.5;
 const MOUTH_BASE_Y: f64 = 0.60;
 const MOUTH_HALF_WIDTH: f64 = 0.11;
 const MOUTH_AMPLITUDE: f64 = 0.06;
+/// Thin stroke of the closed lip line (half-thickness, normalized).
+const MOUTH_LINE_HALF: f64 = 0.009;
+/// How far the middle of the mouth drops open at full `openness`, normalized.
+const MOUTH_OPEN_DEPTH: f64 = 0.12;
 
 fn draw_mouth(bmp: &mut Bitmap, mouth: &crate::Mouth) {
     let size = bmp.size as f64;
-    let half_thickness = 0.009 + mouth.openness * 0.03;
+    // The mouth opens *downward* into a crescent: the gap below the lip line is widest in
+    // the middle and tapers to nothing at the corners (`1 - t²`), so the bottom edge is a
+    // clean arc bulging down rather than two straight sides growing taller.
+    let open_depth = mouth.openness * MOUTH_OPEN_DEPTH;
     let x_start = ((MOUTH_CENTER_X - MOUTH_HALF_WIDTH) * size)
         .floor()
         .max(0.0) as usize;
@@ -153,10 +160,15 @@ fn draw_mouth(bmp: &mut Bitmap, mouth: &crate::Mouth) {
         if t.abs() > 1.0 {
             continue;
         }
-        // Smile (curve > 0) dips the middle lower than the ends (a ∪); frown inverts it.
-        let yn = MOUTH_BASE_Y + mouth.curve * MOUTH_AMPLITUDE * (1.0 - t * t);
-        let y0 = (((yn - half_thickness) * size).floor()).max(0.0) as usize;
-        let y1 = ((((yn + half_thickness) * size).ceil()) as usize).min(bmp.size - 1);
+        let taper = 1.0 - t * t;
+        // The lip line: smile (curve > 0) dips the middle lower than the ends (a ∪); frown
+        // inverts it. The top edge is the lip line; the bottom edge drops by `open_depth`
+        // in the middle, pinching back to the lip line at the corners.
+        let lip = MOUTH_BASE_Y + mouth.curve * MOUTH_AMPLITUDE * taper;
+        let top = lip - MOUTH_LINE_HALF;
+        let bottom = lip + MOUTH_LINE_HALF + open_depth * taper;
+        let y0 = ((top * size).floor()).max(0.0) as usize;
+        let y1 = (((bottom * size).ceil()) as usize).min(bmp.size - 1);
         for py in y0..=y1 {
             bmp.set(px, py);
         }
@@ -307,6 +319,36 @@ mod tests {
         // Sample near the mouth's corner (within its narrower width).
         let corner = lowest((0.44 * bmp.size() as f64) as usize).unwrap();
         assert!(center > corner);
+    }
+
+    #[test]
+    fn open_mouth_is_a_downward_crescent() {
+        // A speaking (open) mouth with a neutral curve: it should open *downward* into a
+        // crescent — the bottom edge dips lowest in the middle and pinches back up at the
+        // corners — and ink more than a closed mouth.
+        let open = Face {
+            left_eye: symmetric_eye(),
+            right_eye: symmetric_eye(),
+            mouth: Mouth {
+                curve: 0.0,
+                openness: 0.6,
+            },
+            ears: NEUTRAL_EARS,
+        };
+        let mut closed = open;
+        closed.mouth.openness = 0.0;
+
+        let bmp = rasterize(&open, 80);
+        let lowest = |x: usize| (0..bmp.size()).filter(|&y| bmp.get(x, y)).max();
+        let center = lowest(bmp.size() / 2).unwrap();
+        let corner = lowest((0.43 * bmp.size() as f64) as usize).unwrap();
+        // Bottom edge bulges down (convex): center is below the corners.
+        assert!(
+            center > corner,
+            "center {center} should be below corner {corner}"
+        );
+        // Opening the mouth adds ink versus the closed line.
+        assert!(rasterize(&open, 80).ink() > rasterize(&closed, 80).ink());
     }
 
     #[test]

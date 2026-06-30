@@ -5,7 +5,7 @@
 //! ```
 
 use jaxson_core::MoodVector;
-use jaxson_face::{face, rasterize, Bitmap};
+use jaxson_face::{face, face_with, rasterize, Activity, Bitmap};
 use jaxson_face::{Ears, Eye, Face, Mouth};
 
 fn show(label: &str, bmp: &Bitmap) {
@@ -33,6 +33,20 @@ fn main() {
     show(
         "upset (v-0.7, a+0.7)",
         &rasterize(&face(MoodVector::new(-0.7, 0.7), 1.0), size),
+    );
+
+    // Speaking (F2.3 lip-sync): a near-neutral mood with the mouth open mid-word — the
+    // opening is a downward crescent, not a thick bar.
+    show(
+        "speaking (mouth open ~0.6)",
+        &rasterize(
+            &face_with(
+                MoodVector::new(0.2, 0.1),
+                1.0,
+                Activity::Speaking { level: 1.0 },
+            ),
+            size,
+        ),
     );
 
     // A blink: same happy mood, sampled at the middle of a blink.

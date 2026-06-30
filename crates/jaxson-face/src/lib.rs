@@ -109,6 +109,38 @@ pub fn gaze(t: f64) -> (f64, f64) {
     (dx, dy)
 }
 
+/// Widest the mouth opens at peak speech loudness (lip-sync). Bigger than the mood-driven
+/// [`mouth_openness`] range so talking reads clearly.
+const SPEAKING_MOUTH_MAX: f64 = 0.6;
+/// How much wider than resting the eyes go while listening — attentive, "I'm all ears".
+const LISTENING_EYE_BOOST: f64 = 0.25;
+/// Floor on ear perk while listening, so Jaxson looks alert even in a low mood.
+const LISTENING_EAR_PERK: f64 = 0.5;
+
+/// What Jaxson is doing right now, layered on top of mood-driven expression so the face
+/// follows the conversation (F2.3): talking flaps the mouth, listening widens the eyes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Activity {
+    /// Just being — mood plus idle blink/gaze only.
+    Idle,
+    /// Speaking aloud; `level` is the current speech loudness in `[0, 1]` (e.g. from an
+    /// audio envelope), driving how far the mouth opens.
+    Speaking { level: f64 },
+    /// Listening to the user (microphone open): attentive, steady, wide-eyed.
+    Listening,
+}
+
+/// Mouth openness while speaking, from the current speech `level` (`[0, 1]`, clamped).
+pub fn speaking_mouth_openness(level: f64) -> f64 {
+    level.clamp(0.0, 1.0) * SPEAKING_MOUTH_MAX
+}
+
+/// Eye openness while listening: resting openness widened a touch for an attentive look,
+/// still modulated by blinking so Jaxson doesn't stare unnervingly.
+pub fn listening_eye_openness(arousal: f64, t: f64) -> f64 {
+    (base_eye_openness(arousal) + LISTENING_EYE_BOOST).clamp(0.0, 1.0) * blink_factor(t)
+}
+
 /// Assemble the full face for a `mood` at time `t`.
 pub fn face(mood: MoodVector, t: f64) -> Face {
     let openness = eye_openness(mood.arousal(), t);
@@ -129,6 +161,31 @@ pub fn face(mood: MoodVector, t: f64) -> Face {
             perk: ear_perk(mood),
         },
     }
+}
+
+/// Assemble the face for a `mood` at time `t`, layered with what Jaxson is [`Activity`]
+/// doing. [`face`] is exactly the [`Activity::Idle`] case.
+pub fn face_with(mood: MoodVector, t: f64, activity: Activity) -> Face {
+    let mut f = face(mood, t);
+    match activity {
+        Activity::Idle => {}
+        Activity::Speaking { level } => {
+            // The mouth tracks the voice; the mood still sets the smile/frown curve.
+            f.mouth.openness = speaking_mouth_openness(level);
+        }
+        Activity::Listening => {
+            // Attentive: wide eyes looking straight at the user (no idle drift), ears up.
+            let eye = Eye {
+                openness: listening_eye_openness(mood.arousal(), t),
+                pupil_dx: 0.0,
+                pupil_dy: 0.0,
+            };
+            f.left_eye = eye;
+            f.right_eye = eye;
+            f.ears.perk = f.ears.perk.max(LISTENING_EAR_PERK);
+        }
+    }
+    f
 }
 
 #[cfg(test)]
@@ -254,5 +311,61 @@ mod tests {
         assert!(f.mouth.curve < 0.0);
         assert_eq!(f.mouth.openness, 0.0); // low arousal keeps the mouth closed
         assert!(f.ears.perk < 0.0);
+    }
+
+    #[test]
+    fn speaking_mouth_openness_scales_level_and_clamps() {
+        assert!(approx(speaking_mouth_openness(0.0), 0.0));
+        assert!(approx(speaking_mouth_openness(1.0), SPEAKING_MOUTH_MAX));
+        assert!(approx(
+            speaking_mouth_openness(0.5),
+            SPEAKING_MOUTH_MAX * 0.5
+        ));
+        assert_eq!(speaking_mouth_openness(9.0), SPEAKING_MOUTH_MAX); // clamp high
+        assert_eq!(speaking_mouth_openness(-9.0), 0.0); // clamp low
+    }
+
+    #[test]
+    fn listening_widens_the_eyes_beyond_resting() {
+        // Outside a blink, listening is wider than the same mood's resting openness.
+        assert!(listening_eye_openness(0.0, 1.0) > base_eye_openness(0.0));
+        // A blink still shuts them (no creepy stare).
+        assert!(approx(
+            listening_eye_openness(0.0, BLINK_DURATION / 2.0),
+            0.0
+        ));
+        // Clamped at fully open.
+        assert_eq!(listening_eye_openness(1.0, 1.0), 1.0);
+    }
+
+    #[test]
+    fn idle_activity_equals_plain_face() {
+        let mood = MoodVector::new(0.3, 0.4);
+        assert_eq!(face_with(mood, 1.0, Activity::Idle), face(mood, 1.0));
+    }
+
+    #[test]
+    fn speaking_drives_mouth_from_level_not_mood() {
+        // A calm (low-arousal) mood would keep the mouth shut; speaking opens it anyway,
+        // and the mood's curve is preserved.
+        let mood = MoodVector::new(0.6, -0.5);
+        let f = face_with(mood, 1.0, Activity::Speaking { level: 1.0 });
+        assert!(approx(f.mouth.openness, SPEAKING_MOUTH_MAX));
+        assert!(approx(f.mouth.curve, 0.6));
+        // Zero level closes the mouth even though we're "speaking".
+        let quiet = face_with(mood, 1.0, Activity::Speaking { level: 0.0 });
+        assert!(approx(quiet.mouth.openness, 0.0));
+    }
+
+    #[test]
+    fn listening_widens_eyes_centers_gaze_and_perks_ears() {
+        // A sad mood would droop the ears and drift the gaze; listening overrides both.
+        let mood = MoodVector::new(-0.6, -0.4);
+        let f = face_with(mood, 1.0, Activity::Listening);
+        assert!(f.left_eye.openness > face(mood, 1.0).left_eye.openness);
+        assert_eq!(f.left_eye.pupil_dx, 0.0);
+        assert_eq!(f.left_eye.pupil_dy, 0.0);
+        assert_eq!(f.left_eye, f.right_eye);
+        assert!(f.ears.perk >= LISTENING_EAR_PERK);
     }
 }

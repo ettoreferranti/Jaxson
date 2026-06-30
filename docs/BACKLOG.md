@@ -137,9 +137,20 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   with a natural pause at each boundary. Pace is slowed for a calmer, kid-friendly delivery
   via Piper's `length_scale` (`PiperTts::with_length_scale`; default 1.2, override with
   `$JAXSON_PIPER_LENGTH_SCALE`). Voice from `$JAXSON_PIPER_VOICE`; degrades to silent (never
-  fatal) with no voice or output device. Compile + clippy verified for default / `piper` /
+  fatal) with no voice or output device. Crucially, synthesis runs the moment the reply is
+  ready — **before** the memory-extraction pass (a second model call) — via the agent's
+  `respond_streaming_with_reply` `on_reply` hook, so speech starts right after the text
+  instead of waiting out extraction. Compile + clippy verified for default / `piper` /
   `whisper,piper`; live audio run on macOS by the owner.
-- [ ] **F2.3** Voice-driven face: lip/mouth sync to TTS, listening cues in the eyes.
+- [x] **F2.3** Voice-driven face: the mouth lip-syncs to the playing reply and the eyes
+  show a listening cue. Pure, mutation-graded layer: `jaxson-face`'s `Activity`
+  (`Idle`/`Speaking{level}`/`Listening`) + `face_with` (speaking drives mouth openness from
+  `level`; listening widens + steadies the eyes and perks the ears), and
+  `jaxson-perception`'s peak-normalized `Audio::envelope`. App side (behind `piper`): a
+  `SpeechAnimator` maps playback time → current loudness from each spoken sentence's
+  envelope to drive the mouth; the mic-recording state (`whisper`) shows the listening cue
+  (priority over speaking). Compile + clippy verified for default / `piper` / `whisper` /
+  `whisper,piper`; live animation run on macOS by the owner.
 - [ ] **F2.4** `jaxson-safety`: output content filter + topic guardrails (FR-S1/S2).
 - [ ] **F2.5** Parental-control mode (authenticated): review history/memories, tune
   guardrail strictness (FR-S3, resolve OQ-3).

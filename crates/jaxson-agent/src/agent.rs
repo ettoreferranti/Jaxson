@@ -174,6 +174,23 @@ impl Agent {
         user_input: &str,
         on_token: &mut dyn FnMut(&str),
     ) -> Result<Turn, AgentError> {
+        self.respond_streaming_with_reply(model, embedder, now, user_input, on_token, &mut |_| {})
+    }
+
+    /// Like [`respond_streaming`](Self::respond_streaming), but also calls `on_reply` with
+    /// the **cleaned** reply text the moment it's ready — *before* the slower
+    /// memory-extraction pass (a second model call). A caller can use this to start
+    /// speaking the reply immediately while learning finishes in the background of the same
+    /// turn, instead of waiting out extraction first.
+    pub fn respond_streaming_with_reply(
+        &mut self,
+        model: &mut dyn TextGenerator,
+        embedder: &dyn Embedder,
+        now: i64,
+        user_input: &str,
+        on_token: &mut dyn FnMut(&str),
+        on_reply: &mut dyn FnMut(&str),
+    ) -> Result<Turn, AgentError> {
         // One span per turn; raw user text is deliberately kept out of the fields
         // (privacy — NFR-4). `n` is the turn's logical timestamp.
         let _span = tracing::info_span!("turn", n = now).entered();
@@ -204,6 +221,10 @@ impl Agent {
         let expressed = action_sentiment(&cleaned);
         let reply = jaxson_llm::strip_actions(&cleaned);
         self.history.push(Message::assistant(reply.clone()));
+
+        // Hand the finished reply to the caller now, before the (slower) extraction pass,
+        // so speech/UI can react immediately while learning happens below.
+        on_reply(&reply);
 
         // Learn from the latest exchange.
         let learned_nodes = self.learn(model, embedder, now)?;
@@ -526,6 +547,30 @@ mod tests {
         assert!(streamed.contains("Hello"));
         assert!(streamed.contains("friend"));
         assert_eq!(turn.reply, "Hello there friend");
+    }
+
+    #[test]
+    fn respond_streaming_with_reply_hands_over_the_cleaned_reply() {
+        // The reply carries an action cue; `on_reply` must receive the *cleaned* text
+        // (cue stripped) — the same text the turn reports — and fire exactly once.
+        let mut model = ScriptedGenerator::new(["*waves* Hi there!", &extraction_json("nothing")]);
+        let embedder = HashEmbedder::default();
+        let mut agent = Agent::new("persona");
+
+        let mut replies: Vec<String> = Vec::new();
+        let turn = agent
+            .respond_streaming_with_reply(
+                &mut model,
+                &embedder,
+                0,
+                "hi",
+                &mut |_| {},
+                &mut |reply| replies.push(reply.to_string()),
+            )
+            .unwrap();
+
+        assert_eq!(replies, vec!["Hi there!".to_string()]);
+        assert_eq!(turn.reply, "Hi there!");
     }
 
     #[test]
