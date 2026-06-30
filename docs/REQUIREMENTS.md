@@ -112,4 +112,9 @@ The long-term goal is a physical bot; the near-term goal is a polished macOS app
   `qwen3` 141 ms / 44.4 tok/s — both ~10× under the 1.5 s target with headroom for STT/TTS.
   Default pick: a non-reasoning ~8B Q4 model (e.g. `llama3.1:8b`) so the whole reply streams
   immediately; reasoning models (qwen3) are just as fast raw but spend tokens "thinking".
-- OQ-3: Parental-control authentication mechanism (passcode vs. Touch ID). — v0.2.
+- OQ-3: ~~Parental-control authentication mechanism (passcode vs. Touch ID). — v0.2.~~
+  **Resolved (F2.5): passcode.** A parent-set passcode, stored only as a salted, iterated
+  SHA-256 hash (`jaxson-safety::PasscodeHash`) — pure, testable, and portable to the future
+  hardware bot (which has no Touch ID). Touch ID can wrap it as an optional macOS unlock
+  later. Threat model: guards against the child, not a determined attacker (see
+  PRIVACY-SECURITY.md).

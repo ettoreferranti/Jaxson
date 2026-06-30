@@ -31,9 +31,14 @@ first-class product requirements, not afterthoughts.
   own container and explicitly chosen model files.
 - **Untrusted model output.** LLM output is never executed/evaluated and is sanitized
   before any privileged use; it is also passed through the safety filter (v0.2).
-- **Parental-control boundary.** Reviewing history/memories and changing guardrail
-  strictness requires authentication (passcode or Touch ID — OQ-3). A child session
-  cannot weaken its own guardrails.
+- **Parental-control boundary.** Reviewing memories and changing guardrail strictness
+  requires a **parent passcode** (F2.5; OQ-3 resolved in favor of a passcode over Touch ID
+  for portability). It's stored only as a salted, iterated SHA-256 hash
+  (`jaxson-safety::PasscodeHash`) in `parental.json` — never plaintext — so a child session
+  cannot weaken its own guardrails. _Threat model: this gate guards against the child using
+  the device, not a determined attacker — a short kid-set passcode can't withstand offline
+  brute force regardless of hashing; the OS account and the encrypted memory DB are the real
+  perimeter. Touch ID may wrap it as an optional macOS unlock later._
 - **No secrets in git.** Enforced by `.gitignore` and a CI secret scan; user data,
   model weights, logs, and `.env` files are never committed.
 

@@ -3,7 +3,7 @@ use jaxson_core::{MoodVector, RelationshipEvent, RelationshipState, TopicAffinit
 use jaxson_extract::Extractor;
 use jaxson_llm::{assemble, ChatTemplate, GenerationConfig, Message, TextGenerator};
 use jaxson_memory::{retrieve, MemoryGraph, MemoryId, MemoryKind, RetrievalParams};
-use jaxson_safety::{SafetyFilter, Verdict};
+use jaxson_safety::{SafetyFilter, Strictness, Verdict};
 
 use crate::curiosity;
 use crate::embedder::Embedder;
@@ -144,6 +144,17 @@ impl Agent {
     /// Current mood for the face.
     pub fn mood(&self) -> MoodVector {
         self.state.mood()
+    }
+
+    /// The guardrail strictness currently applied to replies.
+    pub fn safety_strictness(&self) -> Strictness {
+        self.safety.strictness()
+    }
+
+    /// Set the guardrail strictness — backs the parental-control tuning (FR-S3). Takes
+    /// effect on the next reply.
+    pub fn set_safety_strictness(&mut self, strictness: Strictness) {
+        self.safety = SafetyFilter::new(strictness);
     }
 
     /// The line to open a session with: a first-meeting introduction when Jaxson knows
@@ -647,6 +658,26 @@ mod tests {
         let greeting = returning.opening_greeting();
         assert!(greeting.contains("Ettore"), "{greeting}");
         assert!(!greeting.contains("What's your name"), "{greeting}");
+    }
+
+    #[test]
+    fn safety_strictness_is_configurable_and_changes_filtering() {
+        let embedder = HashEmbedder::default();
+
+        // Standard (the default) lets a mild "gory" reply through.
+        let mut model = ScriptedGenerator::new(["That movie was gory!", &extraction_json("x")]);
+        let mut agent = Agent::new("persona");
+        assert_eq!(agent.safety_strictness(), Strictness::Standard);
+        let turn = agent.respond(&mut model, &embedder, 0, "hi").unwrap();
+        assert!(turn.reply.contains("gory"), "{}", turn.reply);
+
+        // Strict blocks the same reply → deflection (no "gory").
+        let mut model = ScriptedGenerator::new(["That movie was gory!", &extraction_json("x")]);
+        let mut agent = Agent::new("persona");
+        agent.set_safety_strictness(Strictness::Strict);
+        assert_eq!(agent.safety_strictness(), Strictness::Strict);
+        let turn = agent.respond(&mut model, &embedder, 0, "hi").unwrap();
+        assert!(!turn.reply.contains("gory"), "{}", turn.reply);
     }
 
     #[test]

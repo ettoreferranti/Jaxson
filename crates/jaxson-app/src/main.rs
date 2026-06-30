@@ -14,6 +14,7 @@ use eframe::egui;
 use egui::Color32;
 
 mod logging;
+mod parental;
 mod persist;
 
 use jaxson_agent::{Agent, AgentConfig, Embedder, HashEmbedder, Turn};
@@ -22,6 +23,7 @@ use jaxson_face::{face, face_with, rasterize, Activity, Bitmap};
 use jaxson_llm::ollama::{self, OllamaModel};
 use jaxson_llm::{ChatTemplate, GenerationConfig, LlmError, TextGenerator};
 use jaxson_memory::{MemoryId, MemoryKind, MemoryNode};
+use jaxson_safety::{PasscodeHash, Strictness};
 
 /// Jaxson's character lives in `jaxson-agent` (single source of truth, shared with the
 /// `persona_probe` tuning example).
@@ -434,6 +436,12 @@ struct JaxsonApp {
     mem_search: String,
     editing: Option<MemoryId>,
     edit_buf: String,
+    // Parental controls (FR-S3): persisted passcode + strictness, plus session unlock state.
+    parental: parental::ParentalConfig,
+    parent_open: bool,
+    parent_unlocked: bool,
+    parent_pin: String,
+    parent_status: String,
 }
 
 impl JaxsonApp {
@@ -450,7 +458,7 @@ impl JaxsonApp {
         // Load any previously persisted memory before the agent starts the session.
         let mut persist = persist::Persistence::open();
         let graph = persist.load();
-        let agent = Agent::with_graph(PERSONA, graph).with_config(AgentConfig {
+        let mut agent = Agent::with_graph(PERSONA, graph).with_config(AgentConfig {
             template,
             // Stop generation at the template's end-of-turn token.
             gen_config: GenerationConfig {
@@ -463,6 +471,9 @@ impl JaxsonApp {
             },
             ..Default::default()
         });
+        // Apply the parent-chosen guardrail strictness (FR-S3) before the session starts.
+        let parental = parental::load();
+        agent.set_safety_strictness(parental.strictness);
         let mood = agent.mood();
         let memory_count = agent.graph().node_count();
         // A first-meeting intro, or a warm welcome-back (by name when remembered) for a
@@ -515,6 +526,114 @@ impl JaxsonApp {
             mem_search: String::new(),
             editing: None,
             edit_buf: String::new(),
+            parental,
+            parent_open: false,
+            parent_unlocked: false,
+            parent_pin: String::new(),
+            parent_status: String::new(),
+        }
+    }
+
+    /// Set the guardrail strictness from the parent panel: apply it to the live agent and
+    /// persist the choice so it sticks across restarts.
+    fn set_strictness(&mut self, level: Strictness) {
+        self.parental.strictness = level;
+        if let Some(brain) = self.brain.as_mut() {
+            brain.agent.set_safety_strictness(level);
+        }
+        self.parent_status = match parental::save(&self.parental) {
+            Ok(()) => format!("Guardrails set to {level:?}."),
+            Err(e) => format!("couldn't save settings: {e}"),
+        };
+    }
+
+    /// The parental-control panel (FR-S3): first-run passcode setup, a locked passcode
+    /// prompt, or — once unlocked — the guardrail-strictness picker plus memory review,
+    /// which are otherwise hidden so a child can't reach them.
+    fn parent_controls(&mut self, ui: &mut egui::Ui, busy: bool) {
+        ui.separator();
+        if self.parent_unlocked {
+            ui.horizontal(|ui| {
+                ui.label("Guardrails:");
+                for level in [
+                    Strictness::Lenient,
+                    Strictness::Standard,
+                    Strictness::Strict,
+                ] {
+                    let on = self.parental.strictness == level;
+                    if ui.selectable_label(on, format!("{level:?}")).clicked() {
+                        self.set_strictness(level);
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                if ui
+                    .button(format!("🧠 Memories ({})", self.memory_count))
+                    .clicked()
+                {
+                    self.show_memories = !self.show_memories;
+                }
+                if ui
+                    .add_enabled(!busy, egui::Button::new("⬇ Export JSON"))
+                    .clicked()
+                {
+                    if let Some(brain) = self.brain.as_ref() {
+                        self.export_status = match persist::export_json(brain.agent.graph()) {
+                            Ok(path) => format!("exported to {}", path.display()),
+                            Err(e) => format!("export failed: {e}"),
+                        };
+                    }
+                }
+                if ui.button("🔒 Lock").clicked() {
+                    self.parent_unlocked = false;
+                    self.show_memories = false;
+                    self.parent_open = false;
+                    self.parent_status.clear();
+                }
+            });
+        } else if self.parental.has_passcode() {
+            ui.horizontal(|ui| {
+                ui.label("Parent passcode:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.parent_pin)
+                        .password(true)
+                        .desired_width(120.0),
+                );
+                if ui.button("Unlock").clicked() {
+                    if self.parental.unlocks(&self.parent_pin) {
+                        self.parent_unlocked = true;
+                        self.parent_status.clear();
+                    } else {
+                        self.parent_status = "Wrong passcode.".to_string();
+                    }
+                    self.parent_pin.clear();
+                }
+            });
+        } else {
+            ui.label("Set a parent passcode to lock guardrails and memory review:");
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.parent_pin)
+                        .password(true)
+                        .desired_width(120.0),
+                );
+                let can_set = !self.parent_pin.trim().is_empty();
+                if ui
+                    .add_enabled(can_set, egui::Button::new("Set passcode"))
+                    .clicked()
+                {
+                    self.parental.passcode = Some(PasscodeHash::new(self.parent_pin.trim()));
+                    self.parent_unlocked = true;
+                    self.parent_status = match parental::save(&self.parental) {
+                        Ok(()) => "Passcode set.".to_string(),
+                        Err(e) => format!("couldn't save: {e}"),
+                    };
+                    self.parent_pin.clear();
+                }
+            });
+        }
+        if !self.parent_status.is_empty() {
+            ui.small(self.parent_status.as_str());
         }
     }
 
@@ -1114,12 +1233,8 @@ impl eframe::App for JaxsonApp {
             }
 
             ui.horizontal(|ui| {
-                let label = format!("🧠 Memories ({})", self.memory_count);
-                if ui.button(label).clicked() {
-                    self.show_memories = !self.show_memories;
-                }
                 // Clear the visible chat and the model's short-term context — long-term
-                // memory (the graph) is kept. (Disabled while a turn is generating.)
+                // memory (the graph) is kept. Always available to the child.
                 if ui
                     .add_enabled(!busy, egui::Button::new("🧹 Clear chat"))
                     .clicked()
@@ -1130,19 +1245,23 @@ impl eframe::App for JaxsonApp {
                     self.transcript =
                         vec![("Jaxson", "Fresh start! What's on your mind?".to_string())];
                 }
-                // Debug dump: the DB is encrypted, so this is the readable view.
-                if ui
-                    .add_enabled(!busy, egui::Button::new("⬇ Export JSON"))
-                    .clicked()
-                {
-                    if let Some(brain) = self.brain.as_ref() {
-                        self.export_status = match persist::export_json(brain.agent.graph()) {
-                            Ok(path) => format!("exported to {}", path.display()),
-                            Err(e) => format!("export failed: {e}"),
-                        };
-                    }
+                // Parent mode (FR-S3): gates guardrail tuning + memory review.
+                let parent_label = if self.parent_unlocked {
+                    "🔓 Parent"
+                } else {
+                    "🔒 Parent"
+                };
+                if ui.button(parent_label).clicked() {
+                    self.parent_open = !self.parent_open;
+                    self.parent_status.clear();
+                    self.parent_pin.clear();
                 }
             });
+            // Memory review + guardrail settings live behind the parent passcode, so they're
+            // only shown when the panel is open.
+            if self.parent_open {
+                self.parent_controls(ui, busy);
+            }
             ui.small(self.persist.status());
             if !self.export_status.is_empty() {
                 ui.small(self.export_status.as_str());

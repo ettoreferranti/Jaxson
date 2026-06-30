@@ -161,8 +161,16 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   is swapped for the deflection — verified by an agent test, agent stays 0-missed. Deterministic
   lexicon stand-in (like `jaxson-affect`'s analyzer), to be augmented by an LLM classifier
   later. Follow-ups: input pre-filter, and exposing strictness for parental controls (F2.5).
-- [ ] **F2.5** Parental-control mode (authenticated): review history/memories, tune
-  guardrail strictness (FR-S3, resolve OQ-3).
+- [x] **F2.5** Parental-control mode (authenticated): a parent passcode gates tuning the
+  guardrail strictness and reviewing memories. **Resolves OQ-3 → passcode** (pure, testable,
+  portable to the hardware bot; Touch ID can wrap it later). Pure core: `jaxson-safety`
+  `PasscodeHash` (salted, iterated SHA-256 — stores no plaintext; 100% mutation-graded) and
+  `Agent::set_safety_strictness`/`safety_strictness`. App: a 🔒 Parent panel — first-run
+  passcode setup, locked passcode prompt, then (unlocked) a Lenient/Standard/Strict picker
+  wired live to the agent + the memory inspector + Export JSON (now hidden behind the gate so
+  a child can't reach them). Passcode hash + chosen strictness persist as `parental.json` in
+  the data dir and apply on launch. Compile + clippy clean (default / sqlite / llama / etc.);
+  UI run on macOS by the owner. Follow-ups: persisted conversation-history review; Touch ID.
 - [ ] **F2.6** Privacy hardening: encryption-at-rest verification, log scrubbing.
 
 ## Milestone v0.3 — Depth & polish
