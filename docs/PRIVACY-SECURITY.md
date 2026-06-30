@@ -23,10 +23,17 @@ first-class product requirements, not afterthoughts.
 
 - **Encryption at rest.** The memory/state store is encrypted on disk with
   **SQLCipher** (`jaxson-memory`'s `sqlite` feature; chosen at v0.1 — see ADR A7).
-  Opening with the wrong key fails. Keys live in the macOS Keychain. _(Dev-only escape
-  hatch: `$JAXSON_DB_KEY` supplies the key directly and bypasses the Keychain, so an
-  unsigned dev build doesn't re-prompt every launch. The DB stays encrypted, but a key in
-  the environment is weaker than the Keychain — never set it for a real install.)_
+  Opening with the wrong key fails. Keys live in the macOS Keychain. **Verified (F2.6):** a
+  test stores a known secret and asserts the raw DB file is neither a plaintext SQLite file
+  nor contains the secret in the clear. _(Dev-only escape hatch: `$JAXSON_DB_KEY` supplies
+  the key directly and bypasses the Keychain, so an unsigned dev build doesn't re-prompt
+  every launch. The DB stays encrypted, but a key in the environment is weaker than the
+  Keychain — never set it for a real install.)_
+- **Log scrubbing (F2.6).** Logs stay on-device, but as defense-in-depth the app passes the
+  paths it logs through `jaxson-core::scrub::redact`, which masks home-dir usernames, email
+  addresses, and long digit runs — so a shared log file doesn't leak who or where the user
+  is. The agent already keeps raw user text and memory content out of its `tracing` fields
+  (NFR-4).
 - **Sandboxing.** The app runs sandboxed with least-privilege file access — only its
   own container and explicitly chosen model files.
 - **Untrusted model output.** LLM output is never executed/evaluated and is sanitized

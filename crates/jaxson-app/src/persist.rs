@@ -35,7 +35,9 @@ impl Persistence {
         {
             match open_store() {
                 Ok((store, path)) => {
-                    tracing::info!(path = %path.display(), "opened encrypted memory store");
+                    // Scrub the username out of the path before logging (privacy / F2.6).
+                    let shown = jaxson_core::scrub::redact(&path.display().to_string());
+                    tracing::info!(path = %shown, "opened encrypted memory store");
                     Persistence {
                         store: Some(store),
                         status: format!("memory: {}", path.display()),

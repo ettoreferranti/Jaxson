@@ -171,7 +171,13 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
   a child can't reach them). Passcode hash + chosen strictness persist as `parental.json` in
   the data dir and apply on launch. Compile + clippy clean (default / sqlite / llama / etc.);
   UI run on macOS by the owner. Follow-ups: persisted conversation-history review; Touch ID.
-- [ ] **F2.6** Privacy hardening: encryption-at-rest verification, log scrubbing.
+- [x] **F2.6** Privacy hardening. **Encryption-at-rest verification:** a `jaxson-memory`
+  test stores a recognizable secret, then asserts the raw `.jaxsondb` bytes neither begin
+  with the plaintext SQLite header nor contain the secret — proving SQLCipher encrypts on
+  disk (runs in CI's sqlite job). **Log scrubbing:** new pure, 100%-mutation-graded
+  `jaxson-core::scrub::redact` masks home-dir usernames (`/Users/<name>` → `/Users/[user]`),
+  email addresses, and 7+-digit runs; the app applies it to the paths it logs (memory DB,
+  whisper model, piper voice) so the local logs don't leak who/where the user is.
 
 ## Milestone v0.3 — Depth & polish
 

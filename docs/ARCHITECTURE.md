@@ -52,7 +52,7 @@ macOS app crate (added in v0.1) depends on them.
 
 | Crate | Responsibility | UI-free? | Status |
 | ----- | -------------- | -------- | ------ |
-| `jaxson-core` | Shared value types + state machine: `MoodVector`, `Emotion`, `RelationshipState`, per-topic `TopicAffinities` (F1.5), IDs, errors | ✅ | **seeded (F1.5)** |
+| `jaxson-core` | Shared value types + state machine: `MoodVector`, `Emotion`, `RelationshipState`, per-topic `TopicAffinities` (F1.5), IDs, errors, and `scrub::redact` (masks PII in log strings, F2.6) | ✅ | **seeded (F1.5, F2.6)** |
 | `jaxson-memory` | Memory graph (typed/weighted nodes + edges), hybrid retrieval (cosine + graph spread), `MemoryStore` trait + in-memory store; encrypted SQLite (SQLCipher) persistence behind the `sqlite` feature | ✅ (pure) / SQLCipher (feature) | **built (F1.2, F1.4)** |
 | `jaxson-affect` | Affect engine: relationship state + (lexicon) sentiment → target `MoodVector`; smoothing via the state machine | ✅ | **built (F1.6)** |
 | `jaxson-llm` | Chat messages, prompt/chat-template assembly, decode config, `TextGenerator` trait; `llama.cpp`+Metal backend (`LlamaGenerator` + `LlamaEmbedder`, sharing one loaded model) behind the `llama` feature | ✅ (pure) / Metal (feature) | **built (F1.1, F1.4b)** |

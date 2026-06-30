@@ -10,6 +10,7 @@
 mod affinity;
 mod mood;
 mod relationship;
+pub mod scrub;
 
 pub use affinity::TopicAffinities;
 pub use mood::{Emotion, MoodVector};
