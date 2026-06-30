@@ -42,10 +42,17 @@ impl Persistence {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "could not open memory store; running ephemerally");
+                    let key_from_env = std::env::var(KEY_ENV)
+                        .map(|v| !v.is_empty())
+                        .unwrap_or(false);
+                    let status = ephemeral_status(&e, key_from_env);
+                    tracing::warn!(
+                        error = %e,
+                        "could not open memory store; running EPHEMERALLY — memories will NOT survive a restart: {status}"
+                    );
                     Persistence {
                         store: None,
-                        status: format!("memory not persisted ({e})"),
+                        status,
                     }
                 }
             }
@@ -142,6 +149,26 @@ fn open_store() -> Result<(jaxson_memory::SqliteStore, std::path::PathBuf), Stri
 #[cfg(feature = "sqlite")]
 const KEY_ENV: &str = "JAXSON_DB_KEY";
 
+/// Turn an open failure into a clear, user-facing status line. SQLCipher reports a wrong
+/// key as "file is not a database" (it can't decrypt the header) — overwhelmingly because
+/// the DB was created under a *different* key than the one in play now (e.g. the Keychain
+/// vs a `$JAXSON_DB_KEY` passphrase). That used to degrade silently to an in-memory session
+/// and quietly lose memories on quit, so name the cause and the fix instead of echoing a
+/// cryptic backend error. `key_from_env` says which key we tried, to point the right way.
+#[cfg(feature = "sqlite")]
+fn ephemeral_status(error: &str, key_from_env: bool) -> String {
+    if error.contains("not a database") {
+        let fix = if key_from_env {
+            "it was likely made with a different key (e.g. the Keychain). Unset $JAXSON_DB_KEY to use the original, or delete memory.jaxsondb to start fresh under this key"
+        } else {
+            "it was likely made with a different key (e.g. a $JAXSON_DB_KEY passphrase). Set that key, or delete memory.jaxsondb to start fresh"
+        };
+        format!("⚠ memory NOT saved — wrong DB key: {fix}.")
+    } else {
+        format!("memory not persisted ({error})")
+    }
+}
+
 /// The DB encryption key. In development, set `$JAXSON_DB_KEY` to supply the key directly
 /// and skip the Keychain — macOS re-prompts for Keychain access on every launch of an
 /// unsigned `cargo build` binary (its identity changes each rebuild), which is tedious
@@ -189,4 +216,34 @@ fn new_key() -> String {
         uuid::Uuid::new_v4().simple(),
         uuid::Uuid::new_v4().simple()
     )
+}
+
+#[cfg(all(test, feature = "sqlite"))]
+mod tests {
+    use super::ephemeral_status;
+
+    #[test]
+    fn wrong_key_with_env_key_suggests_unset_or_delete() {
+        // SQLCipher's wrong-key symptom, while a $JAXSON_DB_KEY is in play.
+        let s = ephemeral_status("storage backend error: file is not a database", true);
+        assert!(s.contains("wrong DB key"), "{s}");
+        assert!(
+            s.contains("Unset $JAXSON_DB_KEY") || s.contains("delete"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn wrong_key_without_env_key_suggests_setting_it() {
+        let s = ephemeral_status("file is not a database", false);
+        assert!(s.contains("wrong DB key"), "{s}");
+        assert!(s.contains("$JAXSON_DB_KEY"), "{s}");
+    }
+
+    #[test]
+    fn unrelated_errors_pass_through_verbatim() {
+        let s = ephemeral_status("no data directory", false);
+        assert!(s.contains("no data directory"), "{s}");
+        assert!(!s.contains("wrong DB key"), "{s}");
+    }
 }

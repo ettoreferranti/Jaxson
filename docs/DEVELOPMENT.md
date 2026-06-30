@@ -46,7 +46,11 @@ are git-ignored.
 > avoid that while iterating, set `JAXSON_DB_KEY` to any passphrase — the app uses it
 > directly and skips the Keychain. The DB is still encrypted with that key (use the same
 > value each run to reopen an existing DB). Dev only: a key in the environment is weaker
-> than one in the Keychain, so don't set it for a real install.
+> than one in the Keychain, so don't set it for a real install. **Switching key sources**
+> (Keychain ↔ `$JAXSON_DB_KEY`, or changing the passphrase) can't open a DB made under the
+> old key — the status line then reads "⚠ memory NOT saved — wrong DB key …" and the
+> session runs in-memory only; delete `memory.jaxsondb` to start fresh under the new key,
+> or switch back to the original key.
 >
 > ```sh
 > JAXSON_DB_KEY=dev-only-passphrase \
