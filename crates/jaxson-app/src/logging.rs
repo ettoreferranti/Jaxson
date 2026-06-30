@@ -6,7 +6,9 @@
 //! (next to the encrypted memory DB). Nothing leaves the device; the files are git-ignored.
 //!
 //! Control verbosity with `JAXSON_LOG` (e.g. `JAXSON_LOG=debug`, or
-//! `JAXSON_LOG=jaxson_agent=debug,info`); the default is `info`.
+//! `JAXSON_LOG=jaxson_agent=debug,info`); the default is `info`. The ONNX Runtime (`ort`,
+//! used by Piper TTS) logs reams of graph-optimization detail at INFO, so it's pinned to
+//! `warn` unless `JAXSON_LOG` mentions `ort` explicitly.
 
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -15,7 +17,16 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 /// available the file sink is skipped and only stderr is used.
 #[must_use]
 pub fn init() -> Option<tracing_appender::non_blocking::WorkerGuard> {
-    let filter = || EnvFilter::try_from_env("JAXSON_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = || {
+        let directives = std::env::var("JAXSON_LOG").unwrap_or_else(|_| "info".to_string());
+        let mut filter = EnvFilter::new(&directives);
+        // Quiet ORT's chatty graph-optimization INFO logs by default, unless the user has
+        // said something about `ort` themselves.
+        if !directives.contains("ort") {
+            filter = filter.add_directive("ort=warn".parse().expect("valid directive"));
+        }
+        filter
+    };
 
     let stderr_layer = fmt::layer()
         .with_writer(std::io::stderr)
