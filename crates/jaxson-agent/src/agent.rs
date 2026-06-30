@@ -626,6 +626,30 @@ mod tests {
     }
 
     #[test]
+    fn opening_greeting_reflects_the_graph() {
+        use jaxson_memory::{MemoryNode, Provenance};
+
+        // Empty graph → first-meeting intro that asks the name.
+        let fresh = Agent::new("persona");
+        assert!(fresh.opening_greeting().contains("What's your name"));
+
+        // A known user name → greet by name instead of re-asking.
+        let mut graph = MemoryGraph::new();
+        graph.insert_node(MemoryNode::new(
+            MemoryId::from_u128(1),
+            MemoryKind::Person,
+            "The user's name is Ettore",
+            0,
+            Provenance::StatedByUser,
+            0.9,
+        ));
+        let returning = Agent::with_graph("persona", graph);
+        let greeting = returning.opening_greeting();
+        assert!(greeting.contains("Ettore"), "{greeting}");
+        assert!(!greeting.contains("What's your name"), "{greeting}");
+    }
+
+    #[test]
     fn clear_history_drops_context_but_keeps_memory_and_state() {
         let mut model = ScriptedGenerator::new(["hi", &extraction_json("User likes tea")]);
         let embedder = HashEmbedder::default();

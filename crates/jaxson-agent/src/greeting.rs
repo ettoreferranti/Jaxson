@@ -20,9 +20,7 @@ const NAME_MARKERS: &[&str] = &["user's name is ", "user is named ", "user is ca
 pub(crate) fn opening_greeting(graph: &MemoryGraph) -> String {
     match known_user_name(graph) {
         Some(name) => format!("Hey, {name}! So good to see you again! What's new?"),
-        None if knows_user(graph) => {
-            "Hey, you're back! I've missed you. What's new?".to_string()
-        }
+        None if knows_user(graph) => "Hey, you're back! I've missed you. What's new?".to_string(),
         None => FIRST_MEETING.to_string(),
     }
 }
@@ -113,10 +111,7 @@ mod tests {
     #[test]
     fn does_not_mistake_another_person_for_the_user() {
         // A friend's name must not be read as the user's own name.
-        assert_eq!(
-            name_from_content("The user has a friend named Alex"),
-            None
-        );
+        assert_eq!(name_from_content("The user has a friend named Alex"), None);
     }
 
     #[test]
