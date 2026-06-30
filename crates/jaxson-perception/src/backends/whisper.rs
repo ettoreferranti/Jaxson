@@ -24,6 +24,12 @@ impl WhisperStt {
     /// Load a whisper model from disk. This is the expensive step; reuse the returned
     /// transcriber across utterances.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, PerceptionError> {
+        // whisper.cpp + GGML print init banners and per-token decode traces straight to
+        // stderr. Route them into whisper-rs's logging hooks — with no `log`/`tracing`
+        // backend feature enabled, that effectively silences them — so they don't drown the
+        // app's own logs. Idempotent; only the first call takes effect.
+        whisper_rs::install_logging_hooks();
+
         let path = path
             .as_ref()
             .to_str()

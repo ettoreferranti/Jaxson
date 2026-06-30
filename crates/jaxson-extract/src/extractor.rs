@@ -25,6 +25,11 @@ impl Default for Extractor {
             provenance: Provenance::InferredFromConversation,
             config: GenerationConfig {
                 temperature: 0.0,
+                // Extraction JSON for one turn is short, so cap the tokens: a model that
+                // fails to emit clean JSON would otherwise run to the default cap, blocking
+                // the turn (and the next reply) for many seconds. A well-behaved model emits
+                // the closing brace and stops well before this.
+                max_tokens: 256,
                 ..GenerationConfig::default()
             },
         }
@@ -111,5 +116,13 @@ mod tests {
     #[test]
     fn default_extractor_uses_deterministic_temperature() {
         assert_eq!(Extractor::default().config.temperature, 0.0);
+    }
+
+    #[test]
+    fn default_extractor_caps_tokens_below_the_generation_default() {
+        // Extraction is bounded tighter than a chat reply so a runaway model can't stall
+        // the turn.
+        assert_eq!(Extractor::default().config.max_tokens, 256);
+        assert!(Extractor::default().config.max_tokens < GenerationConfig::default().max_tokens);
     }
 }
