@@ -1,0 +1,9 @@
+[package]
+name = "jaxson-safety"
+description = "Content filtering + topic guardrails (FR-S1/S2): screen text against categories of unsafe content and decide, at a configurable strictness, whether to allow or block it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

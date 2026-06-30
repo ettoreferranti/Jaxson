@@ -448,6 +448,7 @@ dependencies = [
  "jaxson-extract",
  "jaxson-llm",
  "jaxson-memory",
+ "jaxson-safety",
  "thiserror",
  "tracing",
 ]
@@ -511,6 +512,10 @@ dependencies = [
  "thiserror",
  "whisper-rs",
 ]
+
+[[package]]
+name = "jaxson-safety"
+version = "0.0.0"
 
 [[package]]
 name = "jobserver"

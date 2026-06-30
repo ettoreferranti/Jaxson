@@ -17,3 +17,4 @@ jaxson-affect = { path = "../jaxson-affect" }
 jaxson-llm = { path = "../jaxson-llm" }
 jaxson-memory = { path = "../jaxson-memory" }
 jaxson-extract = { path = "../jaxson-extract" }
+jaxson-safety = { path = "../jaxson-safety" }
